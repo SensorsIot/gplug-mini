@@ -53,6 +53,7 @@ without help, and takes firmware updates over the network.
 | Question | Document |
 |---|---|
 | **What must be true of it?** | [Functional Specification](docs/gPlug-mini-FSD.md) — requirements, state model, verification contracts |
+| **How is it built and changed?** | [Harness](docs/Harness/) — the build contract. Start at [`AI-Workflow.md`](docs/Harness/AI-Workflow.md) |
 | **What does the meter actually do?** | [M-Bus / DLMS Interface Spec](docs/MBUS-E450-Interface-Spec.md) — physical, link and application layers of the E450 interface |
 | **Why is it built this way?** | [Design Decisions](docs/decisions.md) — 37 decisions with provenance, and the alternatives that were rejected |
 
