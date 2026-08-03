@@ -13,14 +13,20 @@ behaviour no cheaper tier can reach.
 | **host** | Dev machine, plain compiler | ms, every push | Decode, OBIS mapping, scaling, cycle-boundary arithmetic, supervisor transitions |
 | **target** | The ESP32-C3 alone | seconds | UART configuration, NVS, GPIO, boot behaviour |
 | **bench** | Device on the Embedded Workbench with AP, broker and OTA relay | minutes | Provisioning, sessions, discovery, OTA, rollback, watchdog, resilience |
-| **cabin** | Installed at the meter | once | Physical layer, real frames, meter power, WiFi coverage |
+| **field** | Installed at the meter | once | Physical layer, real frames, meter power, WiFi coverage |
 | **other** | CI or review | — | Artefact properties not observable at runtime |
 
-**`cabin` is a tier this project adds beyond the usual embedded three.** One class
-of failure — the physical layer and radio coverage at the installation — cannot be
-reproduced anywhere else. Naming it as a tier keeps the bench suite honest about
-what it does not prove, rather than letting a green bench run imply the device
-works in the cabinet.
+**Bench and field differ by control, not by realism.** On the bench the peers are
+ours and faults can be injected — stop the broker, drop the access point, serve an
+untrusted certificate. In the field the peers are real and can only be observed.
+So every fault-injection case belongs on the bench, and the field answers only
+what nothing else can.
+
+**The field tier is optional, and this project has one only because there is no
+M-Bus simulator.** Write one and decode and protocol cases move to the bench,
+leaving radio coverage and meter power. Field cases are the most expensive kind —
+one-shot, rarely repeatable — so that trade is worth revisiting if they start to
+hurt.
 
 Layer mapping: **L0** is exercised transitively and has no host tests of its own —
 empty cells there are expected, not gaps. **L1** interfaces split, with pure cores

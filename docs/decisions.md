@@ -72,7 +72,7 @@ here.
 | T2 | A **compile-time** sim build (Kconfig) injects capture bytes at the UART boundary, preserving inter-chunk timing so the 2000 ms gap logic is genuinely exercised. Everything above that boundary is the identical code path. `[user]` | Build variants |
 | T3 | Compile-time and not runtime, so a shipped binary *cannot* fabricate readings. One synthetic value in HA's `total_increasing` statistics is effectively permanent. `[derived]` | Kconfig, artifact list |
 | T4 | The sim build uses a distinct discovery prefix, a marked `unique_id`, and a `-sim` version suffix, so a bench session leaves no debris in a production HA. `[derived]` | Sim build config |
-| T5 | No hardware meter simulator. The decoder is the same code whether bytes arrive from a file or a wire; what the wire adds is the physical layer, which is what the cabin tier confirms. `[user]` | Scope |
+| T5 | No hardware meter simulator. The decoder is the same code whether bytes arrive from a file or a wire; what the wire adds is the physical layer, which is what the field tier confirms. `[user]` | Scope |
 | T6 | After flashing the production build on the bench, confirm it boots, connects WiFi and MQTT, and reports no meter data — closing the "we tested the sim binary and shipped a different one" gap. `[derived]` | Bench checklist |
 
 ### 2.6 Build and release
@@ -113,7 +113,7 @@ are properties of `dlms_parser` measured against the published captures:
   fact is unsettled. Redistributing them needs either recorded reasoning or a
   note from upstream — not a shrug.
 
-**Unknowable until the cabin test:**
+**Unknowable until the field test:**
 
 - **Does WiFi reach the cabinet?** A basement plus a metal enclosure. This has
   sunk more of these projects than any protocol bug, which is why it is an

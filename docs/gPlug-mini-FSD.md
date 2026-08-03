@@ -21,7 +21,7 @@ open_decisions:
   - OD-3  Does dlms_parser assemble bursts across frames? (gates FR-AGG-01)
   - OD-4  Flash size — 4 MB assumed (gates the partition table, Appendix C)
   - OD-5  Licence status of redistributed E450 captures (gates TS-HOST-01)
-  - OD-6  WiFi coverage inside the meter cabinet (gates cabin acceptance)
+  - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
 related_test_baseline:      (none yet)
 ```
 
@@ -256,7 +256,7 @@ closed.
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| WiFi does not reach the meter cabinet | Medium | Blocks deployment entirely | Explicit cabin test (§22.1). No firmware mitigation exists; the answer is an access point or an external antenna |
+| WiFi does not reach the meter cabinet | Medium | Blocks deployment entirely | Explicit field test (§22.1). No firmware mitigation exists; the answer is an access point or an external antenna |
 | Real frames differ from published captures | Medium | Decoder rework late | Phase 1 closes OD-1..3 first; a real capture becomes a fixture in Phase 3 |
 | Meter serial length differs from the assumption | Medium | Decoder finds no blocks and **fails silently** | Treated as a parameter, not a constant (FR-MTR-05); logged as a distinct condition (FR-ERR-03) |
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
@@ -285,7 +285,7 @@ Recorded so a later reader sees a decision rather than an omission.
 | Offline buffering across broker outages | `total_increasing` lets Home Assistant reconstruct consumption from the next counter value; a gap costs resolution, not correctness (D-H4) |
 | Automatic update polling | Delivers a bad build everywhere before anyone notices (D-U2) |
 | Flash encryption / encrypted NVS | Irreversible eFuse burning to protect a WiFi password from an attacker already inside the meter cabinet (D-C2) |
-| Hardware meter simulator | The decoder is identical whether bytes arrive from a file or a wire; the wire adds only the physical layer, which the cabin tier confirms (D-T5) |
+| Hardware meter simulator | The decoder is identical whether bytes arrive from a file or a wire; the wire adds only the physical layer, which the field tier confirms (D-T5) |
 | Self-hosted CI runner gating on bench tests | The tag carries that meaning instead (D-B3) |
 | ESP32-pack test families beyond the curated subset | ~150 cases, most asserting response shape rather than behaviour |
 
@@ -1065,7 +1065,7 @@ deviation is visible.
 | **host** | Dev machine, no hardware | ms, every push | Decode, mapping, scaling, cycle-boundary arithmetic |
 | **target** | The ESP32-C3 alone | seconds | UART configuration, NVS, GPIO, boot behaviour |
 | **bench** | Device on the Embedded Workbench with AP, broker and OTA relay | minutes | Provisioning, sessions, discovery, OTA, rollback, watchdog, resilience |
-| **cabin** | Installed at the meter | once | Physical layer, real frames, meter power, WiFi coverage |
+| **field** | Installed at the meter | once | Physical layer, real frames, meter power, WiFi coverage |
 | **other** | CI or review | — | Artefact properties not observable at runtime |
 
 Layer mapping: **L0** is exercised transitively and has no host-tier tests of its
@@ -1073,10 +1073,18 @@ own — empty cells there are expected, not gaps. **L1** interfaces are split, w
 their pure cores at host and their wire behaviour at target or bench. **L2**
 application logic is host-tier throughout.
 
-**cabin** is a tier this project adds beyond the standard embedded set, because
-one class of failure — the physical layer and radio coverage at the installation
-— cannot be reproduced anywhere else, and separating it keeps the bench suite
-honest about what it does not prove.
+**bench and field differ by control, not by realism.** On the bench the peers are
+ours, so faults can be injected — the broker is stopped, the access point is
+switched off, an untrusted certificate is served. In the field the peers are the
+real ones and can only be observed; the meter cannot be asked for a malformed
+frame, and the basement cannot be asked for worse coverage.
+
+**The field tier is this large only because there is no M-Bus simulator.** Its
+scope is a consequence of that, not a fixed cost: with a simulator, decode and
+protocol cases would move to the bench and only WiFi coverage and meter power
+would remain irreproducible. That trade is recorded as rejected in
+[`decisions.md`](decisions.md) §4 — reconsider it if the field cases prove
+expensive.
 
 The component × tier coverage matrix is **generated** — see
 `tests/coverage-matrix.md` and `tests/gaps.md`, produced from the requirement IDs
@@ -1091,11 +1099,11 @@ in these chapters and the test specifications. It is not maintained here.
 | **AC-3** | A 10-minute access-point outage is survived with no intervention and no AP-mode fallback | bench |
 | **AC-4** | A firmware update is delivered, applied and confirmed entirely over the network | bench |
 | **AC-5** | A firmware that cannot reach the broker is reverted automatically | bench |
-| **AC-6** | The real meter's frames decode with the values matching the meter's own display | cabin |
-| **AC-7** | The device operates for 24 h on meter power with WiFi coverage sufficient for continuous publication | cabin |
+| **AC-6** | The real meter's frames decode with the values matching the meter's own display | field |
+| **AC-7** | The device operates for 24 h on meter power with WiFi coverage sufficient for continuous publication | field |
 
 AC-6 is the only scenario that can invalidate Phase 1's conclusions, and AC-7 is
-the only one that can invalidate the deployment. Both are cabin-tier by
+the only one that can invalidate the deployment. Both are field-tier by
 necessity, and both are why Phase 3 exists as a phase rather than a formality.
 
 ### 22.2 Traceability
