@@ -6,7 +6,7 @@ documentation stays in sync with it.
 ## The loop
 
 **1. Locate the contract.** Find the FSD rule the work serves in
-[`../gPlug-mini-FSD.md`](../gPlug-mini-FSD.md). Requirements carry stable IDs
+[`../Functionality/gPlug-mini-FSD.md`](../Functionality/gPlug-mini-FSD.md). Requirements carry stable IDs
 (`FR-MTR-07`, `NFR-HA-01`) — cite the ID in the commit. If no rule covers the
 work, it starts by defining the **WHAT**: a new atomic, falsifiable requirement,
 not code. A change with no rule behind it is either scope creep or an

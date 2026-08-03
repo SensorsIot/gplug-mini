@@ -28,7 +28,7 @@ the Harness does not restate the FSD.
 
 ## Where the meter documentation sits
 
-[`../../MBUS-E450-Interface-Spec.md`](../../MBUS-E450-Interface-Spec.md) is not a
+[`../../Functionality/MBUS-E450-Interface-Spec.md`](../../Functionality/MBUS-E450-Interface-Spec.md) is not a
 plane. It records what the meter and the board do — facts about hardware nobody
 here controls — and the FSD cites it rather than copying it. When the two
 disagree, the interface spec wins on hardware behaviour and the FSD wins on what

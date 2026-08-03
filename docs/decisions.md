@@ -10,7 +10,7 @@ considered and rejected are in §4 so they are not helpfully reintroduced later.
 the weaker of the two, and worth a second look if it later causes friction.
 
 Hardware and protocol facts live in
-[`MBUS-E450-Interface-Spec.md`](MBUS-E450-Interface-Spec.md) and are not repeated
+[`MBUS-E450-Interface-Spec.md`](Functionality/MBUS-E450-Interface-Spec.md) and are not repeated
 here.
 
 ---

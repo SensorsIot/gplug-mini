@@ -29,7 +29,7 @@ Requirement provenance is tagged `[user]`, `[derived]`, `[pack:esp32]`.
 Hardware and protocol facts are **not restated here** — they live in
 [`MBUS-E450-Interface-Spec.md`](MBUS-E450-Interface-Spec.md) and are cited by
 section. Settled design decisions live in
-[`decisions.md`](decisions.md) and are cited by decision ID.
+[`decisions.md`](../decisions.md) and are cited by decision ID.
 
 ---
 
@@ -1083,7 +1083,7 @@ frame, and the basement cannot be asked for worse coverage.
 scope is a consequence of that, not a fixed cost: with a simulator, decode and
 protocol cases would move to the bench and only WiFi coverage and meter power
 would remain irreproducible. That trade is recorded as rejected in
-[`decisions.md`](decisions.md) §4 — reconsider it if the field cases prove
+[`decisions.md`](../decisions.md) §4 — reconsider it if the field cases prove
 expensive.
 
 The component × tier coverage matrix is **generated** — see

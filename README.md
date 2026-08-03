@@ -45,17 +45,20 @@ without help, and takes firmware updates over the network.
 
 **Specification complete; no firmware yet.** Every requirement is at *Specified*
 — none is implemented or verified. See
-[the FSD](docs/gPlug-mini-FSD.md) §22.2 for the verification lifecycle, and
+[the FSD](docs/Functionality/gPlug-mini-FSD.md) §22.2 for the verification lifecycle, and
 §4 for open decisions.
 
 ## Documentation
 
-| Question | Document |
+Start at **[`docs/00-Overview.md`](docs/00-Overview.md)** — the map of all three
+planes.
+
+| Question | Where |
 |---|---|
-| **What must be true of it?** | [Functional Specification](docs/gPlug-mini-FSD.md) — requirements, state model, verification contracts |
-| **How is it built and changed?** | [Harness](docs/Harness/) — the build contract. Start at [`AI-Workflow.md`](docs/Harness/AI-Workflow.md) |
-| **What does the meter actually do?** | [M-Bus / DLMS Interface Spec](docs/MBUS-E450-Interface-Spec.md) — physical, link and application layers of the E450 interface |
-| **Why is it built this way?** | [Design Decisions](docs/decisions.md) — 37 decisions with provenance, and the alternatives that were rejected |
+| **What must be true of it?** | [`docs/Functionality/`](docs/Functionality/) — the [FSD](docs/Functionality/gPlug-mini-FSD.md) (requirements, state model, verification contracts) and the [M-Bus / DLMS interface spec](docs/Functionality/MBUS-E450-Interface-Spec.md) |
+| **How is it built and changed?** | [`docs/Harness/`](docs/Harness/) — the build contract. Start at [`AI-Workflow.md`](docs/Harness/AI-Workflow.md) |
+| **How do I install and run it?** | [`docs/UserDocumentation/`](docs/UserDocumentation/) — not written yet; nothing is deployable |
+| **Why is it built this way?** | [`docs/decisions.md`](docs/decisions.md) — 37 decisions with provenance, and the alternatives that were rejected |
 
 ## Hardware
 
@@ -70,7 +73,7 @@ is external to the MCU.
 | Button | 9 |
 
 Full pinout and the meter-side connector mapping:
-[interface spec §2–3](docs/MBUS-E450-Interface-Spec.md).
+[interface spec §2–3](docs/Functionality/MBUS-E450-Interface-Spec.md).
 
 ## Building
 
