@@ -1,0 +1,18 @@
+# ESP-IDF build output
+build/
+sdkconfig
+sdkconfig.old
+
+# Managed components are resolved from dependencies.lock, which IS committed.
+managed_components/
+
+# Host-tier build
+build-host/
+*.o
+*.a
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
