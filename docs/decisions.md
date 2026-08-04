@@ -94,26 +94,38 @@ here.
 
 ---
 
-## 3. Open — deliberately
+## 3. Resolved by measurement
 
-**Resolvable in the first hour of host-tier work, before any hardware.** All four
-are properties of `dlms_parser` measured against the published captures:
+All four were properties of the hardware or of `dlms_parser`, and all four are
+now measured rather than assumed.
 
-| Question | Why it matters |
-| --- | --- |
-| Is the meter serial 8 or 16 characters? | The block algorithm keys on it. A decoder hard-coding 8 finds *no blocks at all* on the long form, and fails silently rather than loudly |
-| Does the library already scale values? | If it does, applying ×0.001 again is a double-scale bug that looks plausible |
-| Does it assemble bursts across frames? | If yes, the 2000 ms gap becomes a publish trigger rather than a decode trigger, and a chunk of planned work disappears |
-| Flash size — 4 MB assumed | The partition table cannot change once the device is in the cabinet. Confirm with `esptool flash_id` at first bench contact |
+| Question | Answer | Evidence |
+| --- | --- | --- |
+| Is the meter serial 8 or 16 characters? | **Both.** One capture carries `LGZ1030655933512`, the other `44337811`, from the same meter model | Published captures; the length is a parameter (FR-MTR-05), defaulting to 8 |
+| Does the library already scale values? | **No.** It exposes the meter's `scaler` beside the raw bytes and applies it only in `value_as_float_with_scaler_applied()` | Library source and its output on the captures |
+| Does it assemble bursts across frames? | **Yes**, and it must: the meter sends DLMS General Block Transfer and the 8-character serial straddles a block boundary — `4433` ends one block, `7811` begins the next | Block flags `0x40` more / `0xC0` last, confirmed against the library's own fixtures |
+| Flash size — 4 MB assumed | **4 MB confirmed**, embedded XMC, JEDEC 20/4016 | `POST /api/chip/info` on the device. ESP-IDF defaults this target to 2 MB, so the build had been addressing half the flash |
 
-**Needs a human decision:**
+**One answer changed the shape of the work.** Because the library reassembles,
+the 2000 ms gap is a publish-cadence rule and not a decode trigger, and the
+last-block flag — not silence — is the authority on when a transmission ends.
+
+**One finding was not on the list.** `value_as_float_with_scaler_applied()`
+returns `float`, which is exact only to 16,777,216; a lifetime energy total in Wh
+passes that at 16.8 MWh. A published capture already shows the meter sending
+25,149,419 Wh and the accessor returning 25,149,420. Home Assistant derives
+consumption from differences between totals, so a quantised total invents
+consumption that never happened — hence FR-DEC-04, cumulative registers stay
+integers. Looking for one bug is how the other was found.
+
+## 4. Open — needs a human decision
 
 - **Licence status of the published captures.** They are GPL-2.0. Whether hex
   captures of a meter's output are copyrightable expression or uncopyrightable
   fact is unsettled. Redistributing them needs either recorded reasoning or a
   note from upstream — not a shrug.
 
-**Unknowable until the field test:**
+## 5. Open — unknowable until the field test
 
 - **Does WiFi reach the cabinet?** A basement plus a metal enclosure. This has
   sunk more of these projects than any protocol bug, which is why it is an
@@ -121,7 +133,7 @@ are properties of `dlms_parser` measured against the published captures:
 
 ---
 
-## 4. Considered and rejected
+## 6. Considered and rejected
 
 Recorded so they are not helpfully reintroduced.
 
