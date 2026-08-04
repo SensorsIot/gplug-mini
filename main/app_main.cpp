@@ -142,10 +142,14 @@ extern "C" void app_main() {
 
     values_this_cycle = 0;
     const auto result = parser.parse({ cycle.data(), cycle.size() });
-    ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed",
+    // Stack headroom after the parse, not before: the parser recurses over the
+    // AXDR structure, so the depth depends on the telegram and the worst case
+    // is whatever the meter sends, not whatever we tested with.
+    ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed, %u B stack free",
              static_cast<unsigned>(cycle.size()),
              static_cast<unsigned>(result.count),
-             static_cast<unsigned>(result.bytes_consumed));
+             static_cast<unsigned>(result.bytes_consumed),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     if (result.count == 0) {
       // A burst arrived and nothing decoded. Distinct from silence, and worth
       // its own line — this is the signature of a wrong serial length or a

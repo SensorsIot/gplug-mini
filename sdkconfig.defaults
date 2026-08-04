@@ -18,3 +18,10 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
 CONFIG_GPLUG_SIM_METER=n
+
+# dlms_parser walks the AXDR structure recursively, and the default 3584-byte
+# main task stack is not enough: the first telegram faults with
+# "Guru Meditation Error: Core 0 panic'ed (Stack protection fault)".
+# The firmware logs its remaining headroom after each cycle so this stays a
+# measured number rather than a guess.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
