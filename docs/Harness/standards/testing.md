@@ -56,9 +56,7 @@ at host and wire behaviour at target or bench. **L2** is host throughout.
 
 ## Test data
 
-The host tier runs against published E450 captures. Their licence status is open
-(`OD-5` in the FSD) — resolve it before committing them to this repository, and
-record the reasoning either way.
+The host tier runs against published E450 captures, committed as fixtures.
 
 A capture taken from the real meter carries the meter serial, which identifies an
 address and an account, and a power trace, which shows occupancy. Substitute the

@@ -16,7 +16,6 @@ change_history:
     MBUS-E450-Interface-Spec.md
 superseded_requirements:    none
 open_decisions:
-  - OD-5  Licence status of redistributed E450 captures (gates TS-HOST-01)
   - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
 related_test_baseline:      (none yet)
 ```

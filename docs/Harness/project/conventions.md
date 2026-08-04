@@ -81,4 +81,3 @@ Bind this before the first host test is written, and record the choice here.
 |---|---|
 | Host test framework | The first host test |
 | Repository licence | Public release. The DLMS dependency is Apache-2.0 |
-| Capture data licence (`OD-5`) | Committing test fixtures |

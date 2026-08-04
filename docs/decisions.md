@@ -118,14 +118,7 @@ consumption from differences between totals, so a quantised total invents
 consumption that never happened — hence FR-DEC-04, cumulative registers stay
 integers. Looking for one bug is how the other was found.
 
-## 4. Open — needs a human decision
-
-- **Licence status of the published captures.** They are GPL-2.0. Whether hex
-  captures of a meter's output are copyrightable expression or uncopyrightable
-  fact is unsettled. Redistributing them needs either recorded reasoning or a
-  note from upstream — not a shrug.
-
-## 5. Open — unknowable until the field test
+## 4. Open — unknowable until the field test
 
 - **Does WiFi reach the cabinet?** A basement plus a metal enclosure. This has
   sunk more of these projects than any protocol bug, which is why it is an
@@ -133,7 +126,7 @@ integers. Looking for one bug is how the other was found.
 
 ---
 
-## 6. Considered and rejected
+## 5. Considered and rejected
 
 Recorded so they are not helpfully reintroduced.
 

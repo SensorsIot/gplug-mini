@@ -372,11 +372,6 @@ two capture sets differing by a push-list reconfiguration is itself evidence tha
 pushes, so a decoder must tolerate registers appearing and disappearing rather
 than assuming a fixed layout.
 
-That data is published under **GPL-2.0**. Whether hex captures of a meter's
-output are copyrightable expression or uncopyrightable fact is genuinely
-unsettled; a project that redistributes them should either record its reasoning
-or ask upstream, rather than assume.
-
 ### 7.2 The capture tool is the first firmware
 
 A capture build — configure the UART per §2.2, dump every received byte as hex to
