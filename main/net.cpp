@@ -34,7 +34,15 @@ void on_wifi(void*, esp_event_base_t base, int32_t id, void* data) {
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     // Retry, always. Never start a SoftAP here: that is FR-SUP-04, and the
     // reason is that the device lives where nobody can see a portal.
-    ESP_LOGW(TAG, "disconnected, retrying");
+    //
+    // The reason code is the whole diagnostic value of this line: 201 is
+    // NO_AP_FOUND, 202 AUTH_FAIL, 15 4WAY_HANDSHAKE_TIMEOUT. Without it a
+    // wrong password and a missing access point look identical, and both look
+    // like "the network is broken".
+    const auto* d = static_cast<wifi_event_sta_disconnected_t*>(data);
+    ESP_LOGW(TAG, "disconnected from '%.*s', reason %d — retrying",
+             d ? d->ssid_len : 0, d ? reinterpret_cast<const char*>(d->ssid) : "",
+             d ? d->reason : -1);
     connected = false;
     vTaskDelay(pdMS_TO_TICKS(2000));
     esp_wifi_connect();
@@ -91,6 +99,13 @@ void wifi_start_and_wait() {
                 "%s", CONFIG_GPLUG_WIFI_SSID);
   std::snprintf(reinterpret_cast<char*>(cfg.sta.password), sizeof(cfg.sta.password),
                 "%s", CONFIG_GPLUG_WIFI_PASSWORD);
+
+  // Stated rather than inherited from a zero-initialised struct: the defaults
+  // for these two have changed between IDF versions, and both failure modes
+  // present as a plain disconnect.
+  cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+  cfg.sta.pmf_cfg.capable = true;
+  cfg.sta.pmf_cfg.required = false;
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
