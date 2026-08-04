@@ -21,4 +21,9 @@ size_t meter_source_read(uint8_t* out, size_t max, uint32_t timeout_ms);
 // behaviour — that would put a runtime branch on the seam.
 const char* meter_source_name();
 
+// Advance to the next candidate line configuration after a burst that decoded
+// to nothing. False when the source has no line settings. See meter_uart.cpp
+// for why this is a probe rather than a constant.
+bool meter_source_try_next_line();
+
 }  // namespace gplug

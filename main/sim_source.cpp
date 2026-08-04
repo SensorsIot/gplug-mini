@@ -86,6 +86,9 @@ size_t meter_source_read(uint8_t* out, size_t max, uint32_t timeout_ms) {
 
 const char* meter_source_name() { return "simulated"; }
 
+// There are no line settings to probe when the bytes come from flash.
+bool meter_source_try_next_line() { return false; }
+
 }  // namespace gplug
 
 #endif  // CONFIG_GPLUG_SIM_METER

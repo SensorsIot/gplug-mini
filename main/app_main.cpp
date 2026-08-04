@@ -66,6 +66,7 @@ void startup_indication() {
 }
 
 size_t values_this_cycle = 0;
+unsigned undecoded = 0;
 
 // One cycle's worth of decoded values, assembled as JSON. Published as a single
 // state message so Home Assistant sees one consistent set rather than a dribble
@@ -241,6 +242,15 @@ extern "C" void app_main() {
       }
       head[shown * 3] = '\0';
       ESP_LOGW(TAG, "  first %u bytes: %s", static_cast<unsigned>(shown), head);
+
+      // Two undecodable bursts in a row is enough to suspect the line settings
+      // rather than the data. One is not: a single corrupt burst is ordinary.
+      if (++undecoded >= 2) {
+        undecoded = 0;
+        gplug::meter_source_try_next_line();
+      }
+    } else {
+      undecoded = 0;
     }
 
     publish_cycle();

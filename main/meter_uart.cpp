@@ -28,26 +28,68 @@ constexpr size_t RX_BUFFER = 1024;
 
 }  // namespace
 
-void meter_source_start() {
+namespace {
+
+// The interface spec says the meter presents an inverted signal, and a real
+// meter does. A bench source may not: an M-Bus simulator can drive either
+// polarity, and either parity, and the wrong choice yields bytes rather than
+// silence — plausible-looking rubbish that no decoder can use.
+//
+// So the line settings are probed rather than asserted. Each candidate gets a
+// few cycles; if nothing decodes, the next one is tried. The order starts with
+// what the specification says, so a correct installation locks on immediately
+// and the probe costs nothing.
+struct LineConfig {
+  uart_parity_t parity;
+  bool invert;
+  const char* name;
+};
+
+constexpr LineConfig CANDIDATES[] = {
+    { UART_PARITY_EVEN,     true,  "8E1 inverted (interface spec)" },
+    { UART_PARITY_EVEN,     false, "8E1 normal" },
+    { UART_PARITY_DISABLE,  true,  "8N1 inverted" },
+    { UART_PARITY_DISABLE,  false, "8N1 normal" },
+};
+
+size_t candidate = 0;
+bool driver_installed = false;
+
+void apply(const LineConfig& c) {
   uart_config_t cfg = {};
   cfg.baud_rate = BAUD;
   cfg.data_bits = UART_DATA_8_BITS;
-  cfg.parity = UART_PARITY_EVEN;
+  cfg.parity = c.parity;
   cfg.stop_bits = UART_STOP_BITS_1;
   cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   cfg.source_clk = UART_SCLK_DEFAULT;
 
-  ESP_ERROR_CHECK(uart_driver_install(PORT, RX_BUFFER, 0, 0, nullptr, 0));
+  if (!driver_installed) {
+    ESP_ERROR_CHECK(uart_driver_install(PORT, RX_BUFFER, 0, 0, nullptr, 0));
+    driver_installed = true;
+  }
   ESP_ERROR_CHECK(uart_param_config(PORT, &cfg));
   ESP_ERROR_CHECK(uart_set_pin(PORT, UART_PIN_NO_CHANGE, RX_PIN,
                                UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+  ESP_ERROR_CHECK(uart_set_line_inverse(PORT, c.invert ? UART_SIGNAL_RXD_INV
+                                                       : UART_SIGNAL_INV_DISABLE));
+  uart_flush_input(PORT);
+  ESP_LOGI(TAG, "meter UART on GPIO%d, %d %s, listen-only", RX_PIN, BAUD, c.name);
+}
 
-  // The interface presents an inverted signal. Without this every byte framing
-  // fails and the port looks dead rather than misconfigured.
-  ESP_ERROR_CHECK(uart_set_line_inverse(PORT, UART_SIGNAL_RXD_INV));
+}  // namespace
 
-  ESP_LOGI(TAG, "meter UART on GPIO%d, %d 8E1, RX inverted, listen-only",
-           RX_PIN, BAUD);
+void meter_source_start() {
+  apply(CANDIDATES[candidate]);
+}
+
+// Called when a burst decoded to nothing. Returns true if the line settings
+// changed, so the caller can say so.
+bool meter_source_try_next_line() {
+  candidate = (candidate + 1) % (sizeof(CANDIDATES) / sizeof(CANDIDATES[0]));
+  ESP_LOGW(TAG, "nothing decodes — trying %s", CANDIDATES[candidate].name);
+  apply(CANDIDATES[candidate]);
+  return true;
 }
 
 size_t meter_source_read(uint8_t* out, size_t max, uint32_t timeout_ms) {
