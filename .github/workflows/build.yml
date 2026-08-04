@@ -34,6 +34,14 @@ jobs:
         shell: bash
 
     steps:
+      # The container is root, the workspace belongs to the runner user, and git
+      # refuses a repository owned by someone else. actions/checkout exempts
+      # itself, so without this the failure surfaces later — at the first git
+      # call in a `run:` step. '*' rather than the workspace, because $IDF_PATH
+      # and any submodule are git repositories the build reads too.
+      - name: Trust the workspace
+        run: git config --global --add safe.directory '*'
+
       - uses: actions/checkout@v4
         with:
           # ESP-IDF derives esp_app_desc_t's version from `git describe` when
