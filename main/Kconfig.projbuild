@@ -8,4 +8,25 @@ config GPLUG_SIM_METER
         Selected by building with sdkconfig.sim.defaults. A production image must
         never have this set; CI verifies that by inspecting the built binary.
 
+comment "Network — provisional, until the captive portal writes NVS"
+
+config GPLUG_WIFI_SSID
+    string "WiFi SSID"
+    default "TestAP"
+    help
+        Compile-time credentials, so a bench run needs no provisioning step.
+        A deployed device is provisioned through its captive portal and reads
+        credentials from NVS; until that exists, these are how it joins.
+
+config GPLUG_WIFI_PASSWORD
+    string "WiFi password"
+    default "testpass123"
+
+config GPLUG_MQTT_URI
+    string "MQTT broker URI"
+    default "mqtt://192.168.4.1:1883"
+    help
+        The workbench runs its broker on the AP network, where a DUT reaches it
+        without internet.
+
 endmenu

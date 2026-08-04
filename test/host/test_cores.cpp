@@ -10,6 +10,7 @@
 #include <string>
 
 #include "aggregator.h"
+#include "ha_discovery.h"
 #include "obis_map.h"
 
 namespace {
@@ -55,6 +56,53 @@ void obis_mapping() {
         "an unmapped code returns nothing — absent and zero are different facts");
 }
 
+// TS-HOST-07 — FR-HA-02, FR-HA-04. The two properties that decide whether an
+// entity is usable rather than merely created: the Energy Dashboard requires
+// energy sensors to carry device_class energy and state_class total_increasing,
+// and unique_id must key on the meter serial so history survives replacing the
+// hardware.
+void discovery_payloads() {
+  using namespace gplug;
+  char buf[768];
+
+  const ObisEntry* energy = obis_lookup("1.1.1.8.0.255");
+  check(discovery_payload(buf, sizeof(buf), *energy, "44337811", "b0:81:84:25:22:5c") > 0,
+        "energy payload built");
+  const std::string e(buf);
+  check(e.find("\"device_class\":\"energy\"") != std::string::npos,
+        "energy carries device_class energy");
+  check(e.find("\"state_class\":\"total_increasing\"") != std::string::npos,
+        "energy carries state_class total_increasing — the Energy Dashboard needs it");
+  check(e.find("\"unique_id\":\"44337811_active_energy_plus\"") != std::string::npos,
+        "unique_id keys on the meter serial, not the MAC");
+  check(e.find("b0:81:84:25:22:5c") != std::string::npos, "MAC appears as a device connection");
+
+  const ObisEntry* power = obis_lookup("1.0.1.7.0.255");
+  check(discovery_payload(buf, sizeof(buf), *power, "44337811", "aa:bb") > 0, "power payload built");
+  const std::string p(buf);
+  check(p.find("\"state_class\":\"measurement\"") != std::string::npos,
+        "power measures rather than accumulates");
+
+  // An identity is not a sensor. Publishing one as a measurement entity puts a
+  // serial number on a graph.
+  const ObisEntry* identity = obis_lookup("0.0.96.1.0.255");
+  check(discovery_payload(buf, sizeof(buf), *identity, "44337811", "aa:bb") == 0,
+        "identity produces no sensor payload");
+
+  // Truncation must fail rather than publish half a JSON document, which Home
+  // Assistant cannot parse and never retries.
+  char tiny[40];
+  check(discovery_payload(tiny, sizeof(tiny), *energy, "44337811", "aa:bb") == 0,
+        "a payload that does not fit reports failure, not truncation");
+
+  char topic[128];
+  check(discovery_topic(topic, sizeof(topic), "44337811", "active_energy_plus") > 0 &&
+        std::string(topic) == "homeassistant/sensor/44337811_active_energy_plus/config",
+        "discovery topic matches Appendix D");
+  check(state_topic(topic, sizeof(topic), "aa:bb") > 0 &&
+        std::string(topic) == "gplug/aa:bb/state", "state topic matches Appendix D");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -64,6 +112,7 @@ int main(int argc, char** argv) {
 
   if (name == "cycle") cycle_boundary();
   else if (name == "obis") obis_mapping();
+  else if (name == "discovery") discovery_payloads();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);
