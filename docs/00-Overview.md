@@ -21,7 +21,6 @@ None of the three carries history or rationale narrative. Those live in `git log
 | If you are… | Read |
 |---|---|
 | Making a change | [`Harness/AI-Workflow.md`](Harness/AI-Workflow.md) — the loop every change follows |
-| Feeding the device from an M-Bus simulator | [`Harness/mbus-simulator.md`](Harness/mbus-simulator.md) — line settings, timing, and a known-good telegram |
 | Judging correctness | [`Functionality/gPlug-mini-FSD.md`](Functionality/gPlug-mini-FSD.md) — requirements, state model, verification contracts |
 | Working on the decoder | [`Functionality/MBUS-E450-Interface-Spec.md`](Functionality/MBUS-E450-Interface-Spec.md) — what the meter and the board actually do |
 | Installing it | [`UserDocumentation/`](UserDocumentation/) — **not written yet; nothing is deployable** |
