@@ -14,6 +14,12 @@ comment "Network — provisional, until the captive portal writes NVS"
 # and autoconnects, so the workbench's own /api/wifi/ap_start cannot have the
 # radio. The device joins that AP instead; these are bench credentials for a
 # bench network, not secrets.
+#
+# BOTH benches broadcast this SSID, and both are ipv4.method=shared, so both
+# gateways are 10.42.0.1. The device joins whichever is stronger and there is no
+# way to tell from the device which one that was: the address it gets and the
+# broker it dials are identical either way. Start the broker on both, or the
+# device lands on the quiet one and reports only a TCP error.
 
 config GPLUG_WIFI_SSID
     string "WiFi SSID"
