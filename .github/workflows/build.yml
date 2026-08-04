@@ -8,8 +8,8 @@
 # checked against whichever image this run produced, so the two directions of
 # the check are covered across runs rather than within one.
 #
-# The host-test half of FR-BLD-07 is still missing: there is no host tier yet.
-# Add it to this job, or a separate ci.yml, with the first test.
+# The host-test half of FR-BLD-07 lives in host-tests.yml — it shares no
+# toolchain with this job and runs in seconds rather than minutes.
 name: Build Firmware
 
 on:

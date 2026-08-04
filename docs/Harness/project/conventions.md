@@ -58,12 +58,24 @@ nothing outside the process.
 
 ## Test framework
 
-**Unbound.** The target tier can use Unity, which ESP-IDF bundles. The host tier
-needs a framework that builds `dlms_parser` for Linux alongside the pure cores;
-the library ships a plain C++ example rather than a framework dependency, so a
-minimal CMake target with assertions is sufficient and adds nothing to resolve.
+**Host tier: CMake and CTest, C++20, under `test/host/`.** The same language and
+standard as the firmware, so a host test exercises the code that ships rather
+than a reimplementation of it — a suite in another language can only test a
+second version of the logic, which is the one kind of test that cannot fail
+usefully. No test framework is pulled in: assertions and one CTest entry per case
+are enough, and each case names the property that breaks rather than reporting
+"the decode test failed".
 
-Bind this before the first host test is written, and record the choice here.
+`dlms_parser` is fetched by tag, matching the version the firmware pins, because
+these tests exist to notice when its behaviour changes. A branch would let it
+move underneath them.
+
+```bash
+cmake -S test/host -B build/host && cmake --build build/host
+ctest --test-dir build/host --output-on-failure
+```
+
+**Target tier: Unity**, which ESP-IDF bundles.
 
 ## Naming
 
@@ -75,9 +87,3 @@ Bind this before the first host test is written, and record the choice here.
 - Files and modules are lower_snake_case; the component prefix matches the
   directory in [`architecture.md`](architecture.md).
 
-## Open bindings
-
-| Item | Blocks |
-|---|---|
-| Host test framework | The first host test |
-| Repository licence | Public release. The DLMS dependency is Apache-2.0 |

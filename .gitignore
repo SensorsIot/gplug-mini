@@ -16,3 +16,6 @@ build-host/
 .idea/
 .DS_Store
 *.swp
+
+# Host-test build tree (CMake + fetched dlms_parser)
+build/

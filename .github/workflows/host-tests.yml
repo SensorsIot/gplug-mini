@@ -1,0 +1,33 @@
+# Host tier — the other half of FR-BLD-07.
+#
+# Separate from build.yml because it shares nothing with it: no ESP-IDF, no
+# container, no toolchain, seconds rather than minutes. Keeping them apart means
+# a decode regression is not buried under a firmware build, and this job can gate
+# a pull request without waiting for one.
+name: Host tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake ninja-build
+
+      - name: Configure
+        run: cmake -S test/host -B build/host -G Ninja
+
+      - name: Build
+        run: cmake --build build/host
+
+      # --output-on-failure, because a bare "1 test failed" says nothing about
+      # which property broke — and each case here stands for a different one.
+      - name: Run
+        run: ctest --test-dir build/host --output-on-failure

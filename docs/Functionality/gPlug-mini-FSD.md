@@ -493,6 +493,7 @@ level shifter. Traffic is one-way.
 | **FR-MTR-03** | Must | The device shall disable both internal pull-up and pull-down on the meter UART receive pin. | `[user]` interface spec §2.2 |
 | **FR-MTR-04** | Must | The device shall never transmit on the meter link. | `[user]` interface spec §1 |
 | **FR-MTR-05** | Must | The meter serial length used for block detection shall be a configurable parameter, not a compiled-in constant. | `[code]` published captures |
+| **FR-MTR-09** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | `[code]` published captures |
 | **FR-MTR-06** | Must | The device shall recover frame alignment without external assistance when reception begins mid-burst. | `[derived]` interface spec §4.1 |
 | **FR-MTR-07** | Must | The device shall discard any frame whose CRC does not validate. | `[user]` interface spec §4.1 |
 | **FR-MTR-08** | Must | The device shall not forward any part of a CRC-invalid frame to the decoder. | `[derived]` |
@@ -825,7 +826,7 @@ a project function — it is exercised transitively through §7.
 
 | ID | Priority | Requirement | Provenance |
 |---|---|---|---|
-| **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^1.2.0 for DLMS decoding. | `[user]` D-D1 |
+| **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^2.1.0 for DLMS decoding. | `[user]` D-D1 |
 | **FR-DEC-02** | Must | The dependency shall be resolved through the Espressif Component Registry and pinned by a committed `dependencies.lock`. | `[derived]` |
 | **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | `[code]` dlms_parser |
 | **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. | `[code]` dlms_parser |
@@ -993,6 +994,12 @@ justifies its implementation cost.
 | **FR-ERR-02** | Must | The device shall count discarded frames and make the count available on the serial console. | `[derived]` |
 | **FR-ERR-03** | Must | The device shall log a distinct condition when a burst is received but no block is found. | `[code]` published captures |
 | **FR-ERR-04** | Must | The device shall not reset as a response to any network, broker or meter fault. | `[derived]` D-C4 |
+
+**FR-MTR-09 exists because the identity moves.** The two published
+configurations do not merely differ in length: one publishes the serial as the
+COSEM logical device name and the other as device ID 1. A decoder reading a
+single OBIS code finds nothing on the other configuration, and finding nothing
+looks exactly like a meter that is not talking.
 
 FR-ERR-03 is the diagnostic that turns a wrong serial length from a silent
 failure into a visible one. A wrong serial length produces exactly this signature — bytes arriving, CRC
