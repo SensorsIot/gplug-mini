@@ -16,9 +16,6 @@ change_history:
     MBUS-E450-Interface-Spec.md
 superseded_requirements:    none
 open_decisions:
-  - OD-1  Meter serial length — 8 or 16 characters (gates FR-MTR-05)
-  - OD-2  Does dlms_parser scale values? (gates FR-DEC-03)
-  - OD-3  Does dlms_parser assemble bursts across frames? (gates FR-AGG-01)
   - OD-5  Licence status of redistributed E450 captures (gates TS-HOST-01)
   - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
 related_test_baseline:      (none yet)
@@ -210,15 +207,14 @@ belong in the project's Harness, not here.
 
 ### 3.1 Phase 1 — Decode proven off-hardware
 
-**Scope.** Build `dlms_parser` for the host, run it against published E450
-captures, and resolve OD-1, OD-2 and OD-3.
+**Scope.** Build `dlms_parser` for the host and run it against published E450
+captures.
 
 **Deliverables.** Host test suite; the measurement mapping; a CI workflow running
 host tests on every push.
 
 **Exit criteria.** Every register in Appendix B decodes from a published capture
-with the correct value, unit and scale. OD-1, OD-2 and OD-3 are closed and this
-FSD updated where their answers changed a requirement.
+with the correct value, unit and scale.
 
 **Dependencies.** None. No hardware.
 
@@ -256,7 +252,7 @@ closed.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | WiFi does not reach the meter cabinet | Medium | Blocks deployment entirely | Explicit field test (§22.1). No firmware mitigation exists; the answer is an access point or an external antenna |
-| Real frames differ from published captures | Medium | Decoder rework late | Phase 1 closes OD-1..3 first; a real capture becomes a fixture in Phase 3 |
+| Real frames differ from published captures | Medium | Decoder rework late | Decoding is proven against published captures before hardware; a real capture becomes a fixture in Phase 3 |
 | Meter serial length differs from the assumption | Medium | Decoder finds no blocks and **fails silently** | Treated as a parameter, not a constant (FR-MTR-05); logged as a distinct condition (FR-ERR-03) |
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
 | DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-CFG-03); decryption itself is out of scope |
@@ -344,9 +340,20 @@ whichever counter value arrives next.
 | FR-AGG-05 | Broker stopped; feed a complete cycle | Set discarded, no queue growth | Memory growth across cycles; replay on reconnect | bench |
 | FR-AGG-06 | Feed 20 bytes of noise, then silence | No publish | An empty or all-zero payload published | host |
 
-**FR-AGG-01 depends on OD-3.** If `dlms_parser` performs burst assembly itself,
-this requirement becomes a publish-cadence rule rather than a decode trigger, and
-its verification moves accordingly. Phase 1 resolves it before implementation.
+**FR-AGG-01 is a publish-cadence rule, not a decode trigger.** `dlms_parser`
+performs the reassembly itself: the meter sends a DLMS General Block Transfer
+sequence — numbered blocks with `0x40` for *more follow* and `0xC0` for *last* —
+and the library concatenates them before parsing. A published capture proves it
+is not optional: an 8-character meter serial is split across a block boundary,
+`4433` ending one block and `7811` beginning the next, and is unreadable to
+anything decoding frame by frame.
+
+The silence gap therefore decides only *when to hand the buffer to the parser*.
+Two consequences: the value must exceed the largest gap the meter leaves between
+blocks of one transmission, which is not knowable from a capture without
+timestamps and is a Phase 3 measurement; and a transmission is complete when the
+last-block flag arrives, so the gap must never be treated as the authority on
+cycle boundaries.
 
 ### 5.5 Constants
 
@@ -486,7 +493,7 @@ level shifter. Traffic is one-way.
 | **FR-MTR-02** | Must | The device shall invert the UART receive signal. | `[user]` interface spec §2.2 |
 | **FR-MTR-03** | Must | The device shall disable both internal pull-up and pull-down on the meter UART receive pin. | `[user]` interface spec §2.2 |
 | **FR-MTR-04** | Must | The device shall never transmit on the meter link. | `[user]` interface spec §1 |
-| **FR-MTR-05** | Must | The meter serial length used for block detection shall be a configurable parameter, not a compiled-in constant. | `[derived]` OD-1 |
+| **FR-MTR-05** | Must | The meter serial length used for block detection shall be a configurable parameter, not a compiled-in constant. | `[code]` published captures |
 | **FR-MTR-06** | Must | The device shall recover frame alignment without external assistance when reception begins mid-burst. | `[derived]` interface spec §4.1 |
 | **FR-MTR-07** | Must | The device shall discard any frame whose CRC does not validate. | `[user]` interface spec §4.1 |
 | **FR-MTR-08** | Must | The device shall not forward any part of a CRC-invalid frame to the decoder. | `[derived]` |
@@ -821,13 +828,26 @@ a project function — it is exercised transitively through §7.
 |---|---|---|---|
 | **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^1.2.0 for DLMS decoding. | `[user]` D-D1 |
 | **FR-DEC-02** | Must | The dependency shall be resolved through the Espressif Component Registry and pinned by a committed `dependencies.lock`. | `[derived]` |
-| **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | `[derived]` OD-2 |
+| **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | `[code]` dlms_parser |
+| **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. | `[code]` dlms_parser |
 
 FR-DEC-03 is stated because the failure it prevents is invisible: if the library
 already scales and the application scales again, every reading is wrong by a
-factor of a thousand and still looks like a plausible number. Phase 1 closes OD-2
-by measuring the library's output against a published capture before any scaling
-is written.
+factor of a thousand and still looks like a plausible number.
+
+`dlms_parser` does not scale behind the caller's back. It exposes the meter's
+`scaler` alongside the raw bytes, and applies it only in the accessor
+`value_as_float_with_scaler_applied()`. Reading that accessor and never scaling
+again satisfies this requirement.
+
+**FR-DEC-04 exists because that accessor returns `float`.** A 24-bit mantissa
+represents every integer only up to 16,777,216, and a lifetime energy total in Wh
+passes that at 16.8 MWh. A published capture already shows it: the meter sends
+25,149,419 Wh and the accessor returns 25,149,420. One watt-hour is harmless in
+itself, but Home Assistant derives consumption from differences between totals,
+so a total that quantises produces phantom consumption and phantom zeroes. Read
+`value` and `scaler` and keep cumulative registers in integer arithmetic; the
+float accessor is fine for instantaneous power.
 
 ### 14.3 Verification
 
@@ -905,7 +925,7 @@ device replaced after a failure must not restart that history.
 | `mqtt_user` | string | empty | No | Portal |
 | `mqtt_pass` | string | empty | No | Portal |
 | `dlms_key` | hex string | empty | No | Portal |
-| `serial_len` | uint8 | *(pending OD-1)* | No | Compile-time default, portal override |
+| `serial_len` | uint8 | 8 | No | Compile-time default, portal override |
 
 | ID | Priority | Requirement | Provenance |
 |---|---|---|---|
@@ -972,11 +992,11 @@ justifies its implementation cost.
 |---|---|---|---|
 | **FR-ERR-01** | Must | The device shall continue operating in every state when the meter produces no data. | `[derived]` |
 | **FR-ERR-02** | Must | The device shall count discarded frames and make the count available on the serial console. | `[derived]` |
-| **FR-ERR-03** | Must | The device shall log a distinct condition when a burst is received but no block is found. | `[derived]` OD-1 |
+| **FR-ERR-03** | Must | The device shall log a distinct condition when a burst is received but no block is found. | `[code]` published captures |
 | **FR-ERR-04** | Must | The device shall not reset as a response to any network, broker or meter fault. | `[derived]` D-C4 |
 
-FR-ERR-03 is the diagnostic that turns the silent failure of OD-1 into a visible
-one. A wrong serial length produces exactly this signature — bytes arriving, CRC
+FR-ERR-03 is the diagnostic that turns a wrong serial length from a silent
+failure into a visible one. A wrong serial length produces exactly this signature — bytes arriving, CRC
 passing, nothing decoded — and without a distinct log line it is indistinguishable
 from a meter that is not talking.
 
