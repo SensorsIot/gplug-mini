@@ -248,15 +248,22 @@ extern "C" void app_main() {
       // these are not bytes the meter sent. A 0x7E part-way in means the
       // settings are right and reception simply began mid-burst, which is
       // ordinary and FR-MTR-06's job to recover from.
+      // A lone 0x7E proves nothing — in 319 bytes of noise one turns up by
+      // chance. What marks real framing is the pair 7E A0: the flag followed
+      // by the HDLC format byte these meters use. Look for that.
       size_t flags = 0, first_flag = cycle.size();
+      bool framed = false;
       for (size_t i = 0; i < cycle.size(); ++i) {
-        if (cycle[i] == 0x7E) { if (!flags) first_flag = i; ++flags; }
+        if (cycle[i] != 0x7E) continue;
+        if (!flags) first_flag = i;
+        ++flags;
+        if (i + 1 < cycle.size() && (cycle[i + 1] & 0xF0) == 0xA0) framed = true;
       }
-      ESP_LOGW(TAG, "  0x7E flags: %u, first at offset %u of %u",
+      ESP_LOGW(TAG, "  0x7E flags: %u, first at offset %u of %u, 7E-A0 pair: %s",
                static_cast<unsigned>(flags), static_cast<unsigned>(first_flag),
-               static_cast<unsigned>(cycle.size()));
+               static_cast<unsigned>(cycle.size()), framed ? "yes" : "no");
 
-      if (flags == 0) {
+      if (!framed) {
         // Only now is the line worth doubting. Two in a row, because one
         // corrupt burst is ordinary.
         if (++undecoded >= 2) {
@@ -264,6 +271,8 @@ extern "C" void app_main() {
           gplug::meter_source_try_next_line();
         }
       } else {
+        // Framing is right; reception simply began mid-burst, or a frame was
+        // corrupt. Not a reason to touch the line settings.
         undecoded = 0;
         char frame[3 * 24 + 1];
         const size_t k = std::min<size_t>(cycle.size() - first_flag, 24);
