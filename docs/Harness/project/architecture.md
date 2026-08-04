@@ -97,6 +97,17 @@ Two prohibitions follow, and they are not stylistic:
   (`FR-BLD-06`). One synthetic value in Home Assistant's `total_increasing`
   statistics is effectively permanent.
 
+## Stack
+
+`dlms_parser` walks the AXDR structure recursively, and the default 3584-byte
+main task stack faults on the first telegram. The build sets 8192; a measured
+cycle leaves 3896 bytes free, so the decode itself costs about 4.3 KB.
+
+**The depth follows the telegram, not the code.** A larger register set, or a
+malformed one, recurses further than anything tested here — which is why the
+firmware logs remaining headroom every cycle instead of trusting a constant.
+Treat a falling number as a defect, not as a reason to raise the constant.
+
 ## Prohibitions
 
 | Never | Because |
