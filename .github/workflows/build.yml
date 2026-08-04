@@ -2,6 +2,12 @@
 #
 # Implements FSD FR-BLD-01 through -05, -07 (build half) and -08.
 #
+# One build per run. The variant is chosen when the run starts: pushes and tags
+# build production, and the simulated firmware is built on demand, because it is
+# only wanted when somebody is about to flash it to the bench. FR-BLD-04 is
+# checked against whichever image this run produced, so the two directions of
+# the check are covered across runs rather than within one.
+#
 # The host-test half of FR-BLD-07 is still missing: there is no host tier yet.
 # Add it to this job, or a separate ci.yml, with the first test.
 name: Build Firmware
@@ -15,6 +21,11 @@ on:
       version:
         description: 'Version to stamp (e.g. 0.1.0)'
         required: true
+      variant:
+        description: 'Which firmware to build'
+        type: choice
+        options: [production, simulated]
+        default: production
 
 permissions:
   contents: write          # required to create the release
@@ -22,6 +33,12 @@ permissions:
 env:
   APP_NAME: gplug-mini     # must match project() in CMakeLists.txt
   IDF_TARGET: esp32c3
+  # The one switch for variant handling. 'false' — the usual case, a project
+  # with a single firmware — pins every run to production and skips the marker
+  # check; the `variant` input above then does nothing. gPlug-mini needs it
+  # because FR-BLD-03 requires a simulated build.
+  MULTI_VARIANT: 'true'
+  SIM_MARKER: GPLUG-SIM    # present only in the simulated image
 
 jobs:
   build:
@@ -52,9 +69,14 @@ jobs:
       - name: Show the IDF version actually used
         run: . $IDF_PATH/export.sh >/dev/null && idf.py --version
 
-      - name: Resolve version
-        id: version
+      - name: Decide what to build
+        id: plan
         run: |
+          # Only a manual run can ask for the simulated firmware. A tag is a
+          # release, and a release is never simulated — FR-BLD-04, FR-BLD-08.
+          VARIANT="${{ github.event.inputs.variant || 'production' }}"
+          [ "$MULTI_VARIANT" = "true" ] || VARIANT=production
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -64,72 +86,74 @@ jobs:
             # branch push can never produce a string that looks like a release.
             VERSION="0.0.0-$(git rev-parse --short HEAD)"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building $VERSION"
 
-      # FR-BLD-01/-02: the version reaches esp_app_desc_t, so the same string
-      # appears on the Home Assistant device page, in the OTA log and on the
-      # release asset. FR-BLD-05: the simulated build carries a -sim suffix.
-      #
-      # -DSDKCONFIG gives each variant its own config file. Without it both
-      # builds share the project-root sdkconfig, and the second silently
-      # inherits the first — only `set-target` deleting it keeps the variants
-      # apart, which is too much to hang FR-BLD-04 on. It also puts the file
-      # where "Collect artefacts" can find it.
-      - name: Build production firmware
+          # FR-BLD-03: the variant is a compile-time choice, made through a
+          # second sdkconfig defaults file. The seam is the Kconfig symbol
+          # CONFIG_GPLUG_SIM_METER; -DCONFIG_… on the command line would not
+          # set it. FR-BLD-05: the simulated version string carries -sim.
+          DEFAULTS="sdkconfig.defaults"
+          if [ "$VARIANT" = "simulated" ]; then
+            DEFAULTS="sdkconfig.defaults;sdkconfig.sim.defaults"
+            VERSION="$VERSION-sim"
+          fi
+
+          {
+            echo "variant=$VARIANT"
+            echo "version=$VERSION"
+            echo "defaults=$DEFAULTS"
+          } >> $GITHUB_OUTPUT
+          echo "Building the $VARIANT firmware as $VERSION"
+
+      # -DSDKCONFIG keeps the config inside the build directory. ESP-IDF would
+      # otherwise write it to the project root, where a leftover from an earlier
+      # run outranks the defaults file and can silently produce the wrong
+      # variant. It also puts the file where "Collect artefacts" looks for it.
+      - name: Build firmware
         run: |
           . $IDF_PATH/export.sh >/dev/null
-          IDF_ARGS="-B build/prod -DSDKCONFIG=$PWD/build/prod/sdkconfig \
-                    -DPROJECT_VER=${{ steps.version.outputs.version }}"
-          idf.py $IDF_ARGS set-target $IDF_TARGET
-          idf.py $IDF_ARGS build
+          ARGS="-B build -DSDKCONFIG=$PWD/build/sdkconfig \
+                -DSDKCONFIG_DEFAULTS=${{ steps.plan.outputs.defaults }} \
+                -DPROJECT_VER=${{ steps.plan.outputs.version }}"
+          idf.py $ARGS set-target $IDF_TARGET
+          idf.py $ARGS build
 
-      # FR-BLD-03: the simulated build is selected at compile time, via a second
-      # sdkconfig defaults file rather than a CMake option — the seam the Harness
-      # specifies is the Kconfig symbol CONFIG_GPLUG_SIM_METER.
-      - name: Build simulated firmware
+      # FR-BLD-04: a production image must contain no capability to fabricate
+      # readings. Checked on the artefact rather than the source, so it survives
+      # a broken guard or a defaults file that stopped being applied. Asserted
+      # in both directions — a simulated image that stopped simulating makes
+      # every bench run meaningless while looking perfectly healthy.
+      - name: Verify the image matches the variant asked for
+        if: env.MULTI_VARIANT == 'true'
         run: |
-          . $IDF_PATH/export.sh >/dev/null
-          IDF_ARGS="-B build/sim -DSDKCONFIG=$PWD/build/sim/sdkconfig \
-                    -DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.sim.defaults \
-                    -DPROJECT_VER=${{ steps.version.outputs.version }}-sim"
-          idf.py $IDF_ARGS set-target $IDF_TARGET
-          idf.py $IDF_ARGS build
-
-      # FR-BLD-04: the production build must contain no capability to fabricate
-      # readings. Checked on the artefact rather than the source, so it survives a
-      # broken guard or a defaults file that stopped being applied. Both
-      # directions: a simulated build that stopped simulating makes every bench
-      # run meaningless while looking fine.
-      - name: Verify the production image cannot fabricate readings
-        run: |
-          if grep -q "GPLUG-SIM" build/prod/${APP_NAME}.bin; then
-            echo "FATAL: production image contains the embedded capture"; exit 1; fi
-          if ! grep -q "GPLUG-SIM" build/sim/${APP_NAME}.bin; then
-            echo "FATAL: simulated image lacks the embedded capture"; exit 1; fi
-          echo "variant separation verified"
+          if grep -q "$SIM_MARKER" build/${APP_NAME}.bin; then FOUND=yes; else FOUND=no; fi
+          case "${{ steps.plan.outputs.variant }}:$FOUND" in
+            production:no|simulated:yes)
+              echo "verified: ${{ steps.plan.outputs.variant }} image, marker $FOUND" ;;
+            production:yes)
+              echo "FATAL: production image contains $SIM_MARKER"; exit 1 ;;
+            simulated:no)
+              echo "FATAL: simulated image lacks $SIM_MARKER"; exit 1 ;;
+          esac
 
       - name: Collect artefacts
         run: |
-          V="${{ steps.version.outputs.version }}"
-          cp build/prod/${APP_NAME}.bin firmware_v${V}.bin
-          cp build/prod/${APP_NAME}.elf firmware_v${V}.elf
-          cp build/sim/${APP_NAME}.bin  firmware_v${V}-sim.bin
-          cp build/sim/${APP_NAME}.elf  firmware_v${V}-sim.elf
+          V="${{ steps.plan.outputs.version }}"
+          cp build/${APP_NAME}.bin firmware_v${V}.bin
+          cp build/${APP_NAME}.elf firmware_v${V}.elf
           # Cold-flash set for the first USB flash: three parts at their offsets,
           # which is what the workbench's POST /api/flash expects.
           mkdir -p coldflash
-          cp build/prod/${APP_NAME}.bin                     coldflash/firmware.bin
-          cp build/prod/bootloader/bootloader.bin           coldflash/bootloader.bin
-          cp build/prod/partition_table/partition-table.bin coldflash/partitions.bin
+          cp build/${APP_NAME}.bin                     coldflash/firmware.bin
+          cp build/bootloader/bootloader.bin           coldflash/bootloader.bin
+          cp build/partition_table/partition-table.bin coldflash/partitions.bin
           # sdkconfig is generated from sdkconfig.defaults and not committed;
           # without this the effective config of a release dies with the runner.
-          cp build/prod/sdkconfig sdkconfig.generated
+          cp build/sdkconfig sdkconfig.generated
           ls -la firmware_v* coldflash/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-v${{ steps.version.outputs.version }}
+          name: firmware-v${{ steps.plan.outputs.version }}
           path: |
             firmware_v*.bin
             firmware_v*.elf
