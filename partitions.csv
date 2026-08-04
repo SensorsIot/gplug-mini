@@ -1,0 +1,18 @@
+# gPlug-mini partition table — FSD Appendix C.
+#
+# 4 MB flash, measured on the board (XMC 20/4016). Two app slots because
+# FR-OTA-04 requires them: the running image is never the one being written.
+#
+# This layout cannot change after the device is installed without physical USB
+# access, and the device lives in a meter cabinet. Sizes are therefore chosen
+# with room to grow rather than to fit today's binary.
+#
+# ota_0 starts at 0x20000 because app partitions must be 64 K-aligned; the
+# 56 K between phy_init and it is unavoidable padding, not spare capacity.
+#
+# Name,     Type, SubType,  Offset,   Size,  Flags
+nvs,        data, nvs,      0x9000,   24K,
+otadata,    data, ota,      0xF000,   8K,
+phy_init,   data, phy,      0x11000,  4K,
+ota_0,      app,  ota_0,    0x20000,  1920K,
+ota_1,      app,  ota_1,    0x200000, 1920K,

@@ -5,6 +5,12 @@ CONFIG_IDF_TARGET="esp32c3"
 # flash unaddressable and no room for two OTA partitions (OD-4).
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
+# Two app slots, so an OTA never overwrites the running image (FR-OTA-04).
+# The layout is FSD Appendix C and is fixed at the first flash — the device is
+# in a meter cabinet and there is no USB access afterwards.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
 # Frees GPIO20/21 and keeps a second log stream off the meter UART.
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 

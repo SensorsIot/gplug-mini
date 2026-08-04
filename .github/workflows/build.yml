@@ -140,12 +140,20 @@ jobs:
           V="${{ steps.plan.outputs.version }}"
           cp build/${APP_NAME}.bin firmware_v${V}.bin
           cp build/${APP_NAME}.elf firmware_v${V}.elf
-          # Cold-flash set for the first USB flash: three parts at their offsets,
-          # which is what the workbench's POST /api/flash expects.
+          # Cold-flash set for the first USB flash. flash_args travels with the
+          # images because the offsets are not constant: moving the app from a
+          # single factory partition to ota_0 moved it from 0x10000 to 0x20000,
+          # and anything that had memorised the old number would flash into the
+          # wrong partition and boot the old image. Let the build state them.
+          # Names are the build's own, not friendlier ones: flash_args refers to
+          # each image by basename and POST /api/flash matches on it, so
+          # renaming firmware.bin here would break the pairing.
           mkdir -p coldflash
-          cp build/${APP_NAME}.bin                     coldflash/firmware.bin
-          cp build/bootloader/bootloader.bin           coldflash/bootloader.bin
-          cp build/partition_table/partition-table.bin coldflash/partitions.bin
+          cp build/flash_args                          coldflash/
+          cp build/${APP_NAME}.bin                     coldflash/
+          cp build/bootloader/bootloader.bin           coldflash/
+          cp build/partition_table/partition-table.bin coldflash/
+          cat coldflash/flash_args
           # sdkconfig is generated from sdkconfig.defaults and not committed;
           # without this the effective config of a release dies with the runner.
           cp build/sdkconfig sdkconfig.generated
@@ -158,7 +166,7 @@ jobs:
             firmware_v*.bin
             firmware_v*.elf
             sdkconfig.generated
-            coldflash/*.bin
+            coldflash/*
 
       # FR-BLD-08: published only from a tagged commit. The tag is also the human
       # assertion that the bench suite passed — see FSD §20.2.
