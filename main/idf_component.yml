@@ -3,3 +3,7 @@
 dependencies:
   idf: ">=6.0"
   esphome/dlms_parser: "^2.1.0"
+  # ESP-IDF 6 moved esp-mqtt out of the core tree into the registry, the same
+  # way it moved cJSON and mDNS. A 5.x project needs no such line, so this is
+  # not an omission anyone would notice by reading older examples.
+  espressif/mqtt: "^1.0.0"
