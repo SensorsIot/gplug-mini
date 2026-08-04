@@ -19,7 +19,6 @@ open_decisions:
   - OD-1  Meter serial length — 8 or 16 characters (gates FR-MTR-05)
   - OD-2  Does dlms_parser scale values? (gates FR-DEC-03)
   - OD-3  Does dlms_parser assemble bursts across frames? (gates FR-AGG-01)
-  - OD-4  Flash size — 4 MB assumed (gates the partition table, Appendix C)
   - OD-5  Licence status of redistributed E450 captures (gates TS-HOST-01)
   - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
 related_test_baseline:      (none yet)
@@ -113,7 +112,7 @@ not anything is listening, and a decoded set with nowhere to go is discarded
 | Input | 1 button, GPIO9, active low, internal pull-up | Interface spec §3 |
 | Power | 5 V from the meter's customer interface | Interface spec §2.1 |
 | Network | 2.4 GHz WiFi, station mode; SoftAP during provisioning | D-C3, D-C6 |
-| Flash | 4 MB **(assumed — OD-4)** | — |
+| Flash | 4 MB embedded (XMC, JEDEC 20/4016) | Read from the device |
 
 **Power has an architectural consequence.** The device is energised only while
 the meter is. It cannot outlive its data source, cannot report the meter being
@@ -231,7 +230,7 @@ behaviour, watchdog, the `-sim` build, and OTA including a rollback.
 **Deliverables.** Both build variants; the bench test suite; a tagged release.
 
 **Exit criteria.** Every bench-tier verification contract in this document passes
-on the Embedded Workbench, and OD-4 is closed by reading the actual flash size.
+on the Embedded Workbench.
 
 **Dependencies.** Phase 1. A gPlugM adapter on the bench.
 
@@ -262,11 +261,9 @@ closed.
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
 | DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-CFG-03); decryption itself is out of scope |
 | Bad firmware reaches the device | Low | Physical visit required | Rollback on failure to reach the broker (FR-OTA-05); manual trigger only (FR-OTA-02) |
-| Flash smaller than 4 MB | Low | Partition table will not fit two OTA slots | OD-4 closed before the first flash, which is the last moment it can change |
 
 ### 4.2 Assumptions
 
-- Flash is 4 MB *(assumed — OD-4)*.
 - The customer interface is unencrypted, as it is for Swiss deployments
   *(assumed from interface spec §4.3)*.
 - The Home Assistant MQTT integration is installed and its discovery prefix is
@@ -1044,7 +1041,7 @@ A reading path through the chapters above; component detail is not restated.
 
 | Stage | Path |
 |---|---|
-| **First flash** | Partition layout Appendix C · confirm flash size (OD-4) · flash over USB |
+| **First flash** | Partition layout Appendix C · flash over USB |
 | **Provision** | §9 portal · §17 configuration catalogue · §11 blue steady confirms |
 | **Verify** | §8 discovery topics appear · Energy Dashboard accepts the entities (§8.5) |
 | **Operate** | §11 indicator states · §19.2 degraded modes |
@@ -1155,7 +1152,7 @@ Registers decoded but not promoted to entities — reactive energy and per-tarif
 and per-phase values — remain in the state payload. Promoting one later is a
 discovery change, not a decode change.
 
-## Appendix C — Partition layout (4 MB, pending OD-4)
+## Appendix C — Partition layout (4 MB)
 
 | Name | Type | Offset | Size |
 |---|---|---|---|
@@ -1166,8 +1163,8 @@ discovery change, not a decode change.
 | `ota_1` | app | 0x200000 | 1920 K |
 
 Two application slots are required by FR-OTA-04. **This layout cannot change
-after the device is installed** without USB access, which is why OD-4 closes in
-Phase 2 rather than later.
+after the device is installed** without USB access, so it is fixed at the first
+flash.
 
 ## Appendix D — MQTT topics
 

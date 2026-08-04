@@ -1,5 +1,10 @@
 CONFIG_IDF_TARGET="esp32c3"
 
+# Measured, not assumed: esptool flash_id on the board reports XMC 20/4016,
+# 4MB embedded. ESP-IDF's default for this target is 2MB, which left half the
+# flash unaddressable and no room for two OTA partitions (OD-4).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
 # Frees GPIO20/21 and keeps a second log stream off the meter UART.
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
