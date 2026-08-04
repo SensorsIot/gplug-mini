@@ -33,6 +33,12 @@ target_link_libraries(test_decode PRIVATE dlms_parser)
 target_include_directories(test_decode PRIVATE ${dlms_parser_SOURCE_DIR}/src)
 target_compile_options(test_decode PRIVATE -Wall -Wextra)
 
+# The pure cores, compiled from main/ — the firmware's own source, not a copy.
+# A host suite that tests a reimplementation cannot fail usefully.
+add_executable(test_cores test_cores.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../../main/obis_map.cpp)
+target_include_directories(test_cores PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
+target_compile_options(test_cores PRIVATE -Wall -Wextra)
+
 enable_testing()
 set(FIXTURES ${CMAKE_CURRENT_SOURCE_DIR}/fixtures)
 
@@ -48,3 +54,5 @@ add_test(NAME TS-HOST-03.scaling-applied-once
          COMMAND test_decode scaling ${FIXTURES}/e450_serial8.hex)
 add_test(NAME TS-HOST-04.energy-needs-integers
          COMMAND test_decode energy ${FIXTURES}/e450_serial8.hex)
+add_test(NAME TS-HOST-05.cycle-boundary COMMAND test_cores cycle)
+add_test(NAME TS-HOST-06.obis-mapping   COMMAND test_cores obis)

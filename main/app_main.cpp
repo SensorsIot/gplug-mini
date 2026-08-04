@@ -144,9 +144,9 @@ extern "C" void app_main() {
     const auto result = parser.parse({ cycle.data(), cycle.size() });
     ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed",
              static_cast<unsigned>(cycle.size()),
-             static_cast<unsigned>(result.objects_found),
+             static_cast<unsigned>(result.count),
              static_cast<unsigned>(result.bytes_consumed));
-    if (result.objects_found == 0) {
+    if (result.count == 0) {
       // A burst arrived and nothing decoded. Distinct from silence, and worth
       // its own line — this is the signature of a wrong serial length or a
       // register set nobody mapped (FR-ERR-03).
