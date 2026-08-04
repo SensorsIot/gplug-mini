@@ -243,11 +243,35 @@ extern "C" void app_main() {
       head[shown * 3] = '\0';
       ESP_LOGW(TAG, "  first %u bytes: %s", static_cast<unsigned>(shown), head);
 
-      // Two undecodable bursts in a row is enough to suspect the line settings
-      // rather than the data. One is not: a single corrupt burst is ordinary.
-      if (++undecoded >= 2) {
+      // Whether an HDLC flag appears anywhere is the question that splits the
+      // two causes apart. No 0x7E at all means the line settings are wrong and
+      // these are not bytes the meter sent. A 0x7E part-way in means the
+      // settings are right and reception simply began mid-burst, which is
+      // ordinary and FR-MTR-06's job to recover from.
+      size_t flags = 0, first_flag = cycle.size();
+      for (size_t i = 0; i < cycle.size(); ++i) {
+        if (cycle[i] == 0x7E) { if (!flags) first_flag = i; ++flags; }
+      }
+      ESP_LOGW(TAG, "  0x7E flags: %u, first at offset %u of %u",
+               static_cast<unsigned>(flags), static_cast<unsigned>(first_flag),
+               static_cast<unsigned>(cycle.size()));
+
+      if (flags == 0) {
+        // Only now is the line worth doubting. Two in a row, because one
+        // corrupt burst is ordinary.
+        if (++undecoded >= 2) {
+          undecoded = 0;
+          gplug::meter_source_try_next_line();
+        }
+      } else {
         undecoded = 0;
-        gplug::meter_source_try_next_line();
+        char frame[3 * 24 + 1];
+        const size_t k = std::min<size_t>(cycle.size() - first_flag, 24);
+        for (size_t i = 0; i < k; ++i) {
+          std::snprintf(frame + i * 3, 4, "%02X ", cycle[first_flag + i]);
+        }
+        frame[k * 3] = '\0';
+        ESP_LOGW(TAG, "  from first flag: %s", frame);
       }
     } else {
       undecoded = 0;
