@@ -1,0 +1,11 @@
+menu "gPlug-mini"
+
+config GPLUG_SIM_METER
+    bool "Simulated meter data (never ship)"
+    default n
+    help
+        Feeds the aggregator from an embedded capture instead of the meter UART.
+        Selected by building with sdkconfig.sim.defaults. A production image must
+        never have this set; CI verifies that by inspecting the built binary.
+
+endmenu

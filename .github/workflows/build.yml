@@ -1,17 +1,15 @@
 # Builds and publishes gPlug-mini firmware.
 #
-# Implements FSD FR-BLD-01, -02, -03, -04, -05 and -08. FR-BLD-07 (build on every
-# push, plus host tests) is NOT implemented here: it needs source and a host tier,
-# neither of which exists yet. Add ci.yml when they do.
+# Implements FSD FR-BLD-01 through -05, -07 (build half) and -08.
 #
-# This workflow has never run. It is tag-triggered, so it stays dormant until the
-# first `v*.*.*` tag — which must not be pushed before the firmware builds
-# locally. Expect the app name and paths below to need one correction then.
+# The host-test half of FR-BLD-07 is still missing: there is no host tier yet.
+# Add it to this job, or a separate ci.yml, with the first test.
 name: Build Firmware
 
 on:
   push:
-    tags: ['v*.*.*']
+    branches: [main]       # FR-BLD-07: build every push. Publishing stays
+    tags: ['v*.*.*']       # tag-only — the release step below is gated on it.
   workflow_dispatch:
     inputs:
       version:
@@ -51,8 +49,12 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            # FR-BLD-02: an untagged build carries the short commit hash, so a
+            # branch push can never produce a string that looks like a release.
+            VERSION="0.0.0-$(git rev-parse --short HEAD)"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building $VERSION"

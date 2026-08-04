@@ -1,0 +1,3 @@
+# Applied after sdkconfig.defaults for the simulated build:
+#   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.sim.defaults"
+CONFIG_GPLUG_SIM_METER=y

@@ -1,0 +1,9 @@
+CONFIG_IDF_TARGET="esp32c3"
+
+# Frees GPIO20/21 and keeps a second log stream off the meter UART.
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Native USB serial/JTAG is the only console on this board.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+CONFIG_GPLUG_SIM_METER=n
