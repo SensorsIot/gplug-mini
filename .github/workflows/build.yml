@@ -70,12 +70,19 @@ jobs:
       # FR-BLD-01/-02: the version reaches esp_app_desc_t, so the same string
       # appears on the Home Assistant device page, in the OTA log and on the
       # release asset. FR-BLD-05: the simulated build carries a -sim suffix.
+      #
+      # -DSDKCONFIG gives each variant its own config file. Without it both
+      # builds share the project-root sdkconfig, and the second silently
+      # inherits the first — only `set-target` deleting it keeps the variants
+      # apart, which is too much to hang FR-BLD-04 on. It also puts the file
+      # where "Collect artefacts" can find it.
       - name: Build production firmware
         run: |
           . $IDF_PATH/export.sh >/dev/null
-          idf.py -B build/prod -DPROJECT_VER="${{ steps.version.outputs.version }}" \
-                 set-target $IDF_TARGET
-          idf.py -B build/prod -DPROJECT_VER="${{ steps.version.outputs.version }}" build
+          IDF_ARGS="-B build/prod -DSDKCONFIG=$PWD/build/prod/sdkconfig \
+                    -DPROJECT_VER=${{ steps.version.outputs.version }}"
+          idf.py $IDF_ARGS set-target $IDF_TARGET
+          idf.py $IDF_ARGS build
 
       # FR-BLD-03: the simulated build is selected at compile time, via a second
       # sdkconfig defaults file rather than a CMake option — the seam the Harness
@@ -83,13 +90,11 @@ jobs:
       - name: Build simulated firmware
         run: |
           . $IDF_PATH/export.sh >/dev/null
-          idf.py -B build/sim \
-                 -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.sim.defaults" \
-                 -DPROJECT_VER="${{ steps.version.outputs.version }}-sim" \
-                 set-target $IDF_TARGET
-          idf.py -B build/sim \
-                 -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.sim.defaults" \
-                 -DPROJECT_VER="${{ steps.version.outputs.version }}-sim" build
+          IDF_ARGS="-B build/sim -DSDKCONFIG=$PWD/build/sim/sdkconfig \
+                    -DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.sim.defaults \
+                    -DPROJECT_VER=${{ steps.version.outputs.version }}-sim"
+          idf.py $IDF_ARGS set-target $IDF_TARGET
+          idf.py $IDF_ARGS build
 
       # FR-BLD-04: the production build must contain no capability to fabricate
       # readings. Checked on the artefact rather than the source, so it survives a
