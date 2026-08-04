@@ -145,15 +145,19 @@ jobs:
           # single factory partition to ota_0 moved it from 0x10000 to 0x20000,
           # and anything that had memorised the old number would flash into the
           # wrong partition and boot the old image. Let the build state them.
-          # Names are the build's own, not friendlier ones: flash_args refers to
-          # each image by basename and POST /api/flash matches on it, so
-          # renaming firmware.bin here would break the pairing.
+          # Take the file list FROM flash_args rather than naming images here.
+          # A hand-written list silently goes stale: enabling OTA added a fourth
+          # image, ota_data_initial.bin at 0xf000, and a set missing it leaves
+          # the bootloader reading whatever the previous layout left there.
+          # Names stay the build's own — /api/flash pairs flash_args entries to
+          # uploaded parts by basename.
           mkdir -p coldflash
-          cp build/flash_args                          coldflash/
-          cp build/${APP_NAME}.bin                     coldflash/
-          cp build/bootloader/bootloader.bin           coldflash/
-          cp build/partition_table/partition-table.bin coldflash/
-          cat coldflash/flash_args
+          cp build/flash_args coldflash/
+          awk '$1 ~ /^0x/ {print $2}' build/flash_args | while read -r f; do
+            cp "build/$f" coldflash/ || { echo "FATAL: flash_args names build/$f, which does not exist"; exit 1; }
+          done
+          echo "flash_args:"; cat coldflash/flash_args
+          echo "collected:";  ls coldflash/
           # sdkconfig is generated from sdkconfig.defaults and not committed;
           # without this the effective config of a release dies with the runner.
           cp build/sdkconfig sdkconfig.generated
