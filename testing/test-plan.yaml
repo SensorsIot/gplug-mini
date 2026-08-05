@@ -90,6 +90,11 @@ capabilities:
     available: no
     notes:     verified 2026-08-05 — workbench pin 18 held low for 7 s produced no reaction
 
+  second-board:
+    what:      A second gPlug-mini board, to prove entity identity follows the meter and not the device
+    available: no
+    notes:     slots 2 and 4 are empty; FR-ID-03 is the only test that needs one
+
   real-meter:
     what:      The installed Landis+Gyr E450, in the cabin
     available: no
@@ -245,7 +250,7 @@ tests:
   needs:    [board, mbus-sim, button-gpio, ota-relay]
   does:      Watches the meter line for 10 minutes across every state, including Provisioning and OTA
   expected:  No transmitted edge at any point, including during boot
-  procedure: P-METER
+  procedure: P-OTA
   status:    not done
   reason:
   commit:
@@ -321,5 +326,941 @@ tests:
   procedure: P-FIELD
   status:    not done
   reason:
+  commit:
+  when:
+
+- id: TS-024
+  verifies: [FR-AGG-01]
+  tier:     host
+  needs:    []
+  does:      Feed two frames separated by 1999 ms, then 2000 ms, then 2001 ms
+  expected:  No boundary at 1999 ms; boundary at 2000 ms and 2001 ms
+  procedure: ctest -R TS-024
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-025
+  verifies: [FR-AGG-02]
+  tier:     host
+  needs:    []
+  does:      Feed a capture whose OBIS definitions and values fall in different frames
+  expected:  One set containing values from both frames
+  procedure: ctest -R TS-025
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-026
+  verifies: [FR-AGG-03]
+  tier:     host
+  needs:    []
+  does:      Feed one complete cycle
+  expected:  Exactly one publish call
+  procedure: ctest -R TS-026
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-027
+  verifies: [FR-AGG-04]
+  tier:     host
+  needs:    []
+  does:      Feed a capture with a register in two blocks and differing values
+  expected:  The first value is retained
+  procedure: ctest -R TS-027
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-028
+  verifies: [FR-AGG-05]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Broker stopped; feed a complete cycle
+  expected:  Set discarded, no queue growth
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-029
+  verifies: [FR-AGG-06]
+  tier:     host
+  needs:    []
+  does:      Feed 20 bytes of noise, then silence
+  expected:  No publish
+  procedure: ctest -R TS-029
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-030
+  verifies: [FR-SUP-01]
+  tier:     target
+  needs:    [board, wifi-ap]
+  does:      Erase NVS, boot
+  expected:  SoftAP appears within 10 s
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-031
+  verifies: [FR-SUP-02]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Credentials stored, boot
+  expected:  Association attempt to the stored SSID
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-032
+  verifies: [FR-SUP-03]
+  tier:     bench
+  needs:    [board, wifi-ap, wifi-ap-outage]
+  does:      Remove the access point for 10 min with credentials stored
+  expected:  Connection attempts continue throughout, at the capped backoff
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-033
+  verifies: [FR-SUP-04]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      "`OPERATIONAL`; power off the access point for 10 min"
+  expected:  Device retries throughout
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-034
+  verifies: [FR-SUP-05]
+  tier:     bench
+  needs:    [board, wifi-ap, wifi-ap-outage]
+  does:      Deny association repeatedly; log attempt times
+  expected:  Intervals increase, then hold at 30 s ±2 s
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-035
+  verifies: [FR-SUP-06]
+  tier:     bench
+  needs:    [board, button-gpio, wifi-ap]
+  does:      "`OPERATIONAL`; hold the button 5 s"
+  expected:  SoftAP appears within 5 s
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-036
+  verifies: [FR-SUP-07]
+  tier:     bench
+  needs:    [board]
+  does:      Enter Provisioning with credentials stored; wait 300 s
+  expected:  Returns to `CONNECTING`
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-037
+  verifies: [FR-SUP-08]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Broker stopped; feed a cycle
+  expected:  Decode occurs and is logged
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-038
+  verifies: [FR-SUP-09]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Boot with each of SSID, passphrase and broker host absent in turn
+  expected:  Provisioning entered in each of the three cases
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-039
+  verifies: [FR-SUP-10]
+  tier:     bench
+  needs:    [board, mqtt-broker, wifi-ap]
+  does:      Provision with MQTT username and password both left blank
+  expected:  A broker session is established
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-040
+  verifies: [NFR-SUP-01]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Stop the broker for 2 min, then restart it
+  expected:  A session is re-established within 60 s of the broker accepting connections
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-041
+  verifies: [FR-MTR-11]
+  tier:     target
+  needs:    [board, mbus-sim]
+  does:      Boot with a DLMS key stored, then with the slot empty
+  expected:  Both boot and decode an unencrypted telegram
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-042
+  verifies: [FR-MTR-12]
+  tier:     bench
+  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
+  does:      Simulator `silence 60`
+  expected:  WiFi and the broker session hold; no measurement is published
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-043
+  verifies: [FR-MTR-13]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator `fault fcs 2`; read the counter on the console
+  expected:  The count rises by exactly one per corrupted frame
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-044
+  verifies: [FR-MTR-14]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator `fault noise 200`, then silence
+  expected:  A condition distinct from a decode failure is logged
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-045
+  verifies: [FR-HA-01]
+  tier:     bench
+  needs:    [board, mbus-sim, mqtt-broker]
+  does:      Fresh broker; connect the DUT; feed one cycle
+  expected:  One retained config per Appendix B entity present in the cycle
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-046
+  verifies: [FR-HA-02]
+  tier:     bench
+  needs:    [board]
+  does:      Note `unique_id`s; reflash with a cleared NVS; reconnect
+  expected:  Identical `unique_id`s
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-047
+  verifies: [FR-HA-03]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Connect with no meter data
+  expected:  No discovery topics
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-048
+  verifies: [FR-HA-04]
+  tier:     bench
+  needs:    [board, ha-bridge, mqtt-broker]
+  does:      Inspect discovery payloads in Home Assistant
+  expected:  Energy entities accepted by the Energy Dashboard
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-049
+  verifies: [FR-HA-06]
+  tier:     bench
+  needs:    [board]
+  does:      Cut DUT power while connected
+  expected:  Broker marks it unavailable within the keepalive window
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-050
+  verifies: [FR-HA-07]
+  tier:     bench
+  needs:    [board]
+  does:      Subscribe fresh after the DUT is offline
+  expected:  No measurement state delivered
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-051
+  verifies: [FR-HA-08]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Read the client identifier the broker sees
+  expected:  It contains the device MAC
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-052
+  verifies: [NFR-HA-01]
+  tier:     bench
+  needs:    [board, mbus-sim, mqtt-broker]
+  does:      Timestamp cycle boundary and broker receipt
+  expected:  Delta ≤ 2 s
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-053
+  verifies: [FR-PRV-01]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
+  expected:  Correct passphrase associates; wrong one rejected
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-054
+  verifies: [FR-PRV-02]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
+  expected:  Correct passphrase associates; wrong one rejected
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-055
+  verifies: [FR-PRV-03]
+  tier:     bench
+  needs:    [board]
+  does:      Associate and request any hostname
+  expected:  The configuration page is served
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-056
+  verifies: [FR-PRV-04]
+  tier:     target
+  needs:    [board, button-gpio]
+  does:      Hold the button through a reset
+  expected:  Device boots normally
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-057
+  verifies: [FR-PRV-05]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Submit configuration; power-cycle
+  expected:  Configuration survives
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-058
+  verifies: [FR-PRV-06]
+  tier:     bench
+  needs:    [board]
+  does:      Enter Provisioning, wait for timeout without submitting
+  expected:  Prior configuration intact
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-059
+  verifies: [FR-PRV-07]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Enter Provisioning with at least one access point in range
+  expected:  The configuration page lists it
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-060
+  verifies: [NFR-PRV-01]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Enter Provisioning, then associate with the SoftAP
+  expected:  Association succeeds within 10 s of entering the state
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-061
+  verifies: [FR-PRV-08]
+  tier:     bench
+  needs:    [board, mqtt-broker, wifi-ap]
+  does:      Enter `homeassistant.local` as the broker address at the portal
+  expected:  Either it resolves and a session follows, or the portal states why it cannot
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-062
+  verifies: [FR-OTA-01]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Publish a valid URL to the command topic
+  expected:  Download begins within 5 s
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-063
+  verifies: [FR-OTA-02]
+  tier:     bench
+  needs:    [board, mqtt-broker, ota-relay]
+  does:      Run 24 h with a newer release published
+  expected:  No download
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-064
+  verifies: [FR-OTA-03]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Serve an image over TLS with an untrusted certificate
+  expected:  Download aborted, image not written
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-065
+  verifies: [FR-OTA-04]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Trigger an update while running from one OTA slot
+  expected:  The image is written to the inactive slot
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-066
+  verifies: [FR-OTA-05]
+  tier:     bench
+  needs:    [board, mqtt-broker, ota-relay]
+  does:      Update to an image that boots but cannot reach the broker
+  expected:  The image is never marked valid
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-067
+  verifies: [FR-OTA-06]
+  tier:     bench
+  needs:    [board, mqtt-broker, ota-relay]
+  does:      Update while the meter is silent
+  expected:  The image is marked valid once the broker session is established
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-068
+  verifies: [FR-OTA-07]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Update, then reset before validation completes
+  expected:  The previously valid image runs
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-069
+  verifies: [FR-OTA-08]
+  tier:     host
+  needs:    []
+  does:      Feed meter cycles throughout a download
+  expected:  Decoding continues
+  procedure: ctest -R TS-069
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-070
+  verifies: [FR-OTA-09]
+  tier:     bench
+  needs:    [board, ota-relay, wifi-ap]
+  does:      Disable the access point mid-download
+  expected:  Download aborted, partial image discarded
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-071
+  verifies: [NFR-OTA-01]
+  tier:     bench
+  needs:    [board, ha-bridge]
+  does:      Read the device entry in Home Assistant after a session is established
+  expected:  The version shown matches the running firmware's version string
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-072
+  verifies: [FR-LED-01]
+  tier:     bench
+  needs:    [board]
+  does:      Drive the DUT through every supervisor state
+  expected:  Indication matches §11.3
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-073
+  verifies: [FR-LED-02]
+  tier:     bench
+  needs:    [board]
+  does:      Drive the DUT through every supervisor state
+  expected:  Indication matches §11.3
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-074
+  verifies: [FR-LED-03]
+  tier:     bench
+  needs:    [board]
+  does:      Drive the DUT through every supervisor state
+  expected:  Indication matches §11.3
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-075
+  verifies: [FR-LED-04]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Trigger an OTA; observe from command to reboot
+  expected:  Update pattern for the whole window
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-076
+  verifies: [FR-LED-05]
+  tier:     bench
+  needs:    [board]
+  does:      Drive the DUT through every supervisor state
+  expected:  Indication matches §11.3
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-077
+  verifies: [FR-NVS-01]
+  tier:     target
+  needs:    [board]
+  does:      Provision the device, then dump the NVS partition
+  expected:  The stored configuration values are readable
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-078
+  verifies: [FR-NVS-02]
+  tier:     target
+  needs:    [board]
+  does:      Corrupt the NVS partition; boot
+  expected:  Device boots and enters Provisioning
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-079
+  verifies: [FR-NVS-03]
+  tier:     bench
+  needs:    [board]
+  does:      Cut power 100 times during normal operation
+  expected:  Configuration intact each time
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-080
+  verifies: [FR-DEC-03]
+  tier:     host
+  needs:    []
+  does:      Decode a capture with a known true value
+  expected:  The published value equals the meter's value in the Appendix B unit
+  procedure: ctest -R TS-080
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-081
+  verifies: [FR-WDT-01]
+  tier:     target
+  needs:    [board]
+  does:      Stall one watchdog-subscribed task
+  expected:  The device resets within the configured task-watchdog period (5 s)
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-082
+  verifies: [FR-WDT-02]
+  tier:     target
+  needs:    [board]
+  does:      Command a test build into an infinite loop in one task
+  expected:  Device resets within the timeout and returns to `OPERATIONAL`
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-083
+  verifies: [FR-WDT-03]
+  tier:     host
+  needs:    []
+  does:      Feed no meter data for 30 min while connected; separately, run a full OTA
+  expected:  No reset in either case
+  procedure: ctest -R TS-083
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-084
+  verifies: [FR-WDT-04]
+  tier:     target
+  needs:    [board]
+  does:      Force a watchdog reset; read the console
+  expected:  Reset reason reported as watchdog
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-085
+  verifies: [FR-WDT-05]
+  tier:     bench
+  needs:    [board, mqtt-broker, wifi-ap, wifi-ap-outage]
+  does:      Drop the access point, stop the broker, and silence the meter, each in turn
+  expected:  The reset reason is unchanged across all three
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-086
+  verifies: [FR-ID-01]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Publish discovery for a known meter, then present a different serial
+  expected:  "`unique_id` follows the meter serial"
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-087
+  verifies: [FR-ID-02]
+  tier:     bench
+  needs:    [board, mqtt-broker]
+  does:      Inspect the client identifier and the operational topic prefix
+  expected:  Both contain the device MAC
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-088
+  verifies: [FR-ID-03]
+  tier:     bench
+  needs:    [board, second-board]
+  does:      Record entity IDs; swap in a second gPlug on the same meter
+  expected:  Entity IDs unchanged; history continues
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-089
+  verifies: [FR-SEC-01]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Serve an image with a self-signed certificate
+  expected:  Rejected, image not written
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-090
+  verifies: [FR-SEC-02]
+  tier:     bench
+  needs:    [board, ota-relay]
+  does:      Serve an image with an expired certificate
+  expected:  Rejected, image not written
+  procedure: P-OTA
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-091
+  verifies: [FR-SEC-03]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Scan for the SoftAP while Provisioning is active
+  expected:  The network advertises WPA2
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-092
+  verifies: [FR-SEC-04]
+  tier:     bench
+  needs:    [board, wifi-ap]
+  does:      Request every portal endpoint after provisioning
+  expected:  No passphrase in any response body
+  procedure: P-NETWORK
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-093
+  verifies: [NFR-SEC-01]
+  tier:     target
+  needs:    [board, wifi-ap]
+  does:      Dump the flash of a provisioned device
+  expected:  The WiFi passphrase is readable in plaintext
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-094
+  verifies: [FR-BLD-01]
+  tier:     other
+  needs:    []
+  does:      Build at a tagged commit
+  expected:  The version string equals the tag
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-095
+  verifies: [FR-BLD-02]
+  tier:     other
+  needs:    []
+  does:      Build an untagged commit
+  expected:  The version string includes the short commit hash
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-096
+  verifies: [FR-BLD-03]
+  tier:     other
+  needs:    []
+  does:      Inspect the production binary and the variant-selection mechanism
+  expected:  Selection is a compile-time option; the production binary contains no capture data
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-097
+  verifies: [FR-BLD-04]
+  tier:     other
+  needs:    []
+  does:      Search the production binary for the embedded capture data
+  expected:  Absent
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-098
+  verifies: [FR-BLD-05]
+  tier:     other
+  needs:    []
+  does:      Build the simulated variant
+  expected:  The version string carries the `-sim` suffix
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-099
+  verifies: [FR-BLD-06]
+  tier:     bench
+  needs:    [board, ha-bridge]
+  does:      Run the simulated build against a Home Assistant instance
+  expected:  Entities appear only under the test prefix
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-100
+  verifies: [FR-BLD-07]
+  tier:     other
+  needs:    []
+  does:      Inspect `.github/workflows/`
+  expected:  Both workflows trigger on `push`; the host job runs `ctest`
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-101
+  verifies: [FR-BLD-08]
+  tier:     other
+  needs:    []
+  does:      Push to a branch without a tag
+  expected:  No release asset produced
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    test not written
   commit:
   when:
