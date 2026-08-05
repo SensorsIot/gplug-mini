@@ -91,7 +91,20 @@ void indicator_start() {
   ESP_LOGI(TAG, "indicator started");
 }
 
-void indicate(Indication i) { current = i; }
+// A test seam, and the only way this is observable on the bench (FR-LED-01..05).
+//
+// The board's LED pins reach nothing the workbench can read — SLOT1 is a native
+// USB JTAG device and the Pi's GPIO header is not wired to it — so no bench test
+// can see the light. The line below is what a test asserts instead.
+//
+// Say plainly what that proves: the state machine chose the right indication.
+// It does not prove an LED lit, that the colour is right, or that the pin is
+// connected. Only a person looking at the board can close that gap, and one
+// field observation does it for all five requirements.
+void indicate(Indication i) {
+  if (i != current) ESP_LOGI(TAG, "indication -> %d", static_cast<int>(i));
+  current = i;
+}
 
 void indicate_publish() {
   pulse_until_us = esp_timer_get_time() + static_cast<int64_t>(PUBLISH_PULSE_MS) * 1000;
