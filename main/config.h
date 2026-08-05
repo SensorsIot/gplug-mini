@@ -42,6 +42,7 @@ struct Config {
 // alarming about.
 enum class ConfigFault {
   None,
+  Unparseable,      // the submission itself was not a form we could read
   NoSsid,           // never provisioned, or the namespace was cleared
   SsidTooLong,      // longer than 802.11 allows — the record is not ours
   PassphraseTooLong,
@@ -53,6 +54,11 @@ enum class ConfigFault {
 constexpr const char* describe(ConfigFault f) {
   switch (f) {
     case ConfigFault::None:              return "valid";
+    // Distinct from NoSsid on purpose. Reporting an unreadable body as "no SSID
+    // stored" points at the form when the fault is in the transport, and a bench
+    // harness that sent an empty body then reads as a firmware defect. That
+    // conflation cost most of a day on 2026-08-05.
+    case ConfigFault::Unparseable:       return "the submission could not be read as a form";
     case ConfigFault::NoSsid:            return "no SSID stored";
     case ConfigFault::SsidTooLong:       return "SSID longer than 802.11 permits";
     case ConfigFault::PassphraseTooLong: return "passphrase longer than WPA2 permits";

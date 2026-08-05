@@ -9,6 +9,7 @@
 // tier; everything here is ESP-IDF and can only be exercised on the bench.
 #include "provisioning.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "config.h"
@@ -126,36 +127,55 @@ bool field(const char* body, const char* name, char* out, size_t cap) {
   return true;   // absent is not malformed; config_fault decides what is required
 }
 
+// The network list for FR-PRV-07, scanned once and reused.
+//
+// It used to be scanned inside page_get, on every request. A blocking scan costs
+// about three seconds and takes the radio away from the SoftAP while it runs, so
+// the first requests after a client associated failed outright and every page
+// that did load took three seconds. On a phone that is a captive portal which
+// does not open on the first tap, which reads as a broken device.
+//
+// Scanning once when Provisioning starts keeps the list — the point of the
+// requirement, since a typo in a typed SSID otherwise surfaces as a wrong
+// password — while making the page immediate.
+constexpr uint16_t MAX_LISTED = 12;
+char scan_summary[512];   // pre-rendered; the handler only copies it out
+
+void scan_networks_once() {
+  scan_summary[0] = '\0';
+
+  wifi_scan_config_t scan = {};
+  scan.show_hidden = false;
+  if (esp_wifi_scan_start(&scan, true) != ESP_OK) {
+    ESP_LOGW(TAG, "scan failed — the page is served without a network list");
+    return;
+  }
+
+  uint16_t found = 0;
+  esp_wifi_scan_get_ap_num(&found);
+  if (found > MAX_LISTED) found = MAX_LISTED;
+  wifi_ap_record_t records[MAX_LISTED];
+  if (!found || esp_wifi_scan_get_ap_records(&found, records) != ESP_OK) return;
+
+  int used = std::snprintf(scan_summary, sizeof(scan_summary), "<p class=n>In range: ");
+  for (uint16_t i = 0; i < found && used > 0 && used < static_cast<int>(sizeof(scan_summary)); ++i) {
+    const int n = std::snprintf(scan_summary + used, sizeof(scan_summary) - static_cast<size_t>(used),
+                                "%s%s (%d dBm)", i ? ", " : "",
+                                reinterpret_cast<const char*>(records[i].ssid), records[i].rssi);
+    if (n <= 0 || n >= static_cast<int>(sizeof(scan_summary)) - used) break;  // truncated: keep what fits
+    used += n;
+  }
+  if (used > 0 && used < static_cast<int>(sizeof(scan_summary)))
+    std::snprintf(scan_summary + used, sizeof(scan_summary) - static_cast<size_t>(used), "</p>");
+
+  ESP_LOGI(TAG, "scanned %u networks for the portal page", static_cast<unsigned>(found));
+}
+
 esp_err_t page_get(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/html");
   httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
-
-  // FR-PRV-07: list what the device can actually see. A typed SSID that differs
-  // by one character from the real one fails as a wrong password, which is the
-  // hardest possible way to discover a typo.
-  wifi_scan_config_t scan = {};
-  scan.show_hidden = false;
-  if (esp_wifi_scan_start(&scan, true) == ESP_OK) {
-    uint16_t found = 0;
-    esp_wifi_scan_get_ap_num(&found);
-    if (found > 12) found = 12;
-    wifi_ap_record_t records[12];
-    if (found && esp_wifi_scan_get_ap_records(&found, records) == ESP_OK) {
-      httpd_resp_send_chunk(req, "<p class=n>In range: ", HTTPD_RESP_USE_STRLEN);
-      for (uint16_t i = 0; i < found; ++i) {
-        char line[64];
-        const int n = std::snprintf(line, sizeof(line), "%s%s (%d dBm)",
-                                    i ? ", " : "",
-                                    reinterpret_cast<const char*>(records[i].ssid),
-                                    records[i].rssi);
-        if (n > 0) httpd_resp_send_chunk(req, line, static_cast<ssize_t>(n));
-      }
-      httpd_resp_send_chunk(req, "</p>", HTTPD_RESP_USE_STRLEN);
-    }
-  } else {
-    ESP_LOGW(TAG, "scan failed — the page is served without a network list");
-  }
-
+  if (scan_summary[0])
+    httpd_resp_send_chunk(req, scan_summary, HTTPD_RESP_USE_STRLEN);
   httpd_resp_send_chunk(req, PAGE_TAIL, HTTPD_RESP_USE_STRLEN);
   httpd_resp_send_chunk(req, nullptr, 0);
   return ESP_OK;
@@ -174,13 +194,21 @@ esp_err_t save_post(httpd_req_t* req) {
   }
   body[got] = '\0';
 
+  // An empty or unencoded body is not a form with missing fields — it is a body
+  // we could not read, and saying so is the whole point of ConfigFault::
+  // Unparseable. field() reports an absent key as success, so without this check
+  // an empty body reaches config_fault() and comes back "no SSID stored",
+  // blaming the form for a fault in the transport.
+  const bool readable = got > 0 && std::strchr(body, '=') != nullptr;
+
   Config c{};
-  const bool parsed = field(body, "ssid", c.ssid, sizeof(c.ssid)) &&
+  const bool parsed = readable &&
+                      field(body, "ssid", c.ssid, sizeof(c.ssid)) &&
                       field(body, "pass", c.passphrase, sizeof(c.passphrase)) &&
                       field(body, "broker", c.broker, sizeof(c.broker)) &&
                       field(body, "host", c.hostname, sizeof(c.hostname));
 
-  const ConfigFault fault = parsed ? config_fault(c) : ConfigFault::NoSsid;
+  const ConfigFault fault = parsed ? config_fault(c) : ConfigFault::Unparseable;
   if (fault != ConfigFault::None) {
     // FR-PRV-08 and the sibling rules: refuse here, with the reason. Accepting
     // a broker address with no scheme would store it, reboot, and present as a
@@ -316,6 +344,11 @@ bool provisioning_run() {
   ESP_ERROR_CHECK(esp_wifi_start());
   ESP_LOGI(TAG, "provisioning: SSID %s, WPA2, %u minute timeout",
            ssid, static_cast<unsigned>(TIMEOUT_MS / 60000));
+
+  // Scan now, before anyone can ask for the page. Doing it here costs the three
+  // seconds once, while nothing is waiting on it, instead of on every request
+  // with a phone watching.
+  scan_networks_once();
 
   esp_netif_ip_info_t ip = {};
   esp_netif_get_ip_info(ap, &ip);
