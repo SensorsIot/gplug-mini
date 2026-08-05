@@ -62,6 +62,11 @@ add_test(NAME TS-009.mid-burst-recovery
 add_test(NAME TS-010.mid-burst-later
          COMMAND test_decode midburst ${FIXTURES}/e450_serial8.hex 200)
 
+add_test(NAME TS-011.crc-invalid-frame-discarded
+         COMMAND test_decode crcdrop ${FIXTURES}/e450_serial8.hex)
+add_test(NAME TS-013.identity-absent
+         COMMAND test_decode noidentity ${FIXTURES}/e450_serial8.hex)
+
 add_test(NAME TS-006.cycle-boundary COMMAND test_cores cycle)
 add_test(NAME TS-007.obis-mapping   COMMAND test_cores obis)
 add_test(NAME TS-008.discovery-payloads COMMAND test_cores discovery)

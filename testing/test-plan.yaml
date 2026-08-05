@@ -172,11 +172,10 @@ tests:
   does:      Feeds a capture with one corrupted checksum byte
   expected:  That frame contributes nothing to the set
   procedure: ctest -R TS-011
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:
+  commit:    912949f
+  when:      2026-08-05T14:35Z
 - id: TS-012
   verifies: [FR-MTR-08]
   tier:     host
@@ -196,11 +195,10 @@ tests:
   does:      Decodes three captures — identity as logical device name, as device ID 1, and absent
   expected:  Identity found in the first two; with neither, discovery defers rather than inventing one
   procedure: ctest -R TS-013
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:
+  commit:    912949f
+  when:      2026-08-05T14:35Z
 # A device that wakes mid-burst can land on a flag byte - one position in about
 # 150, so not rare. Measured 2026-08-05: prepending a single 0x7E to a working
 # capture takes it from 10 decoded values to 0. The parser does not skip a

@@ -183,6 +183,51 @@ void mid_burst_recovery(const char* fixture, size_t offset) {
   check(!values.empty(), "alignment recovered — the remaining frames still decode");
 }
 
+// TS-011 — FR-MTR-07. One byte of a frame's checksum is flipped. The library
+// must drop that frame whole: a CRC exists so that a corrupted frame is treated
+// as absent rather than as data, and half a frame is worse than none because
+// nothing downstream can tell it is half.
+void crc_invalid_frame_discarded(const char* fixture) {
+  const auto good = decode(fixture);
+  std::vector<uint8_t> bytes = read_hex(fixture);
+  // The two bytes before the closing flag are the frame check sequence.
+  size_t last_flag = bytes.size();
+  while (last_flag-- > 0 && bytes[last_flag] != 0x7E) {}
+  const size_t fcs = last_flag - 1;
+  bytes[fcs] ^= 0xFF;
+  const auto bad = decode_bytes(std::move(bytes));
+  printf("       intact: %zu value(s), one checksum byte flipped: %zu\n",
+         good.size(), bad.size());
+  check(!good.empty(), "the intact capture decodes, so the comparison means something");
+  check(bad.size() < good.size(), "the corrupted frame contributes nothing");
+}
+
+// TS-013 — FR-MTR-10. The meter publishes its identity as either the COSEM
+// logical device name or device ID 1. Both positive cases are covered by the two
+// fixtures, which happen to carry one each. This is the third case: neither.
+//
+// It matters because the device defers Home Assistant discovery until it knows
+// the meter serial (FR-HA-03). Inventing an identity here would produce entities
+// that survive nothing — a rename on the next boot, and a household's history
+// split across two devices.
+void identity_absent(const char* fixture) {
+  std::vector<uint8_t> bytes = read_hex(fixture);
+  // Blind both identity OBIS codes: 0.0.42.0.0.255 and 0.0.96.1.0.255.
+  const uint8_t ldn[6]   = { 0x00, 0x00, 0x2A, 0x00, 0x00, 0xFF };
+  const uint8_t devid[6] = { 0x00, 0x00, 0x60, 0x01, 0x00, 0xFF };
+  size_t blinded = 0;
+  for (size_t i = 0; i + 6 <= bytes.size(); ++i) {
+    if (!std::memcmp(&bytes[i], ldn, 6) || !std::memcmp(&bytes[i], devid, 6)) {
+      bytes[i + 2] = 0x99;  // no OBIS group C the meter publishes
+      ++blinded;
+    }
+  }
+  printf("       blinded %zu identity object(s)\n", blinded);
+  check(blinded > 0, "the fixture carried an identity to remove");
+  const auto values = decode_bytes(std::move(bytes));
+  check(find_identity(values) == nullptr, "no identity is reported when none was sent");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -198,6 +243,8 @@ int main(int argc, char** argv) {
   else if (name == "energy")     energy_needs_integers(fixture);
   else if (name == "midburst17") mid_burst_recovery(fixture, 17);
   else if (name == "midburst")   mid_burst_recovery(fixture, argc > 3 ? std::stoul(argv[3]) : 17);
+  else if (name == "crcdrop")    crc_invalid_frame_discarded(fixture);
+  else if (name == "noidentity") identity_absent(fixture);
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);
