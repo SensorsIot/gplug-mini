@@ -13,6 +13,7 @@
 #include "config.h"
 #include "ha_discovery.h"
 #include "obis_map.h"
+#include "provisioning.h"
 
 namespace {
 
@@ -238,6 +239,42 @@ void config_validity() {
   printf("       empty record reports: %s\n", gplug::describe(config_fault(blank)));
 }
 
+// TS-104 — FR-PRV-02, FR-SEC-03. The SoftAP's name and passphrase are a
+// function of the MAC, so an owner can recover access from a label.
+//
+// The bench test associates with the derived passphrase and then a wrong one,
+// which proves WPA2 is on. It cannot show the *rule* is right — it computes the
+// passphrase the same way the firmware does, so a wrong rule agrees with itself
+// and the test passes. That is what this pins.
+void ap_identity() {
+  const uint8_t mac[6] = { 0xb0, 0x81, 0x84, 0x25, 0x22, 0x5c };
+  char ssid[gplug::AP_SSID_MAX + 1];
+  char pass[gplug::AP_PASSPHRASE_MAX + 1];
+
+  check(gplug::ap_ssid(mac, ssid, sizeof(ssid)) > 0, "SSID built");
+  printf("       ssid = %s\n", ssid);
+  check(std::string(ssid) == "gplug-25225c", "SSID is gplug- plus the last three octets");
+
+  const size_t n = gplug::ap_passphrase(mac, pass, sizeof(pass));
+  printf("       passphrase = %s (%zu chars)\n", pass, n);
+  check(n >= gplug::WPA2_MIN_PASSPHRASE, "passphrase clears the WPA2 minimum");
+  check(std::string(pass) == "b0818425225c", "passphrase is the full MAC in lowercase hex");
+
+  // Two devices must not share a passphrase. Obvious, and exactly the property
+  // a truncated or mis-indexed rule breaks while still producing valid output.
+  const uint8_t other[6] = { 0xb0, 0x81, 0x84, 0x25, 0x22, 0x5d };
+  char pass2[gplug::AP_PASSPHRASE_MAX + 1];
+  gplug::ap_passphrase(other, pass2, sizeof(pass2));
+  check(std::string(pass) != std::string(pass2), "different MACs give different passphrases");
+
+  // A buffer too small reports failure rather than truncating. A truncated
+  // passphrase is still a valid WPA2 passphrase, so it would be accepted by
+  // ap_start and simply never match what the owner was told.
+  char tiny[6];
+  check(gplug::ap_passphrase(mac, tiny, sizeof(tiny)) == 0,
+        "a passphrase that does not fit reports failure, never a short one");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -252,6 +289,7 @@ int main(int argc, char** argv) {
   else if (name == "firstwins") first_occurrence_retained();
   else if (name == "emptyset") empty_set_not_published();
   else if (name == "config")   config_validity();
+  else if (name == "apident")  ap_identity();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

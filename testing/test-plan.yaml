@@ -759,6 +759,18 @@ tests:
   commit:
   when:
 
+- id: TS-104
+  verifies: [FR-PRV-02, FR-SEC-03]
+  tier:     host
+  needs:    []
+  does:      Derives the SoftAP name and passphrase from a known MAC, and from a MAC one bit apart
+  expected:  Both match the documented rule, differ between devices, and clear the WPA2 minimum; a short buffer reports failure
+  procedure: ctest -R TS-104
+  status:    successful
+  reason:
+  commit:    59cca9d
+  when:      2026-08-05T19:10Z
+
 - id: TS-053
   verifies: [FR-PRV-01]
   tier:     bench
