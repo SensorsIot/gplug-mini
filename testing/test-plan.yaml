@@ -961,7 +961,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    "half-run 2026-08-05 - the derived passphrase associates; the wrong-passphrase rejection is still unrun"
+  reason:    "written 2026-08-05 in test_provisioning.py, including the wrong-passphrase half; awaiting a run"
   commit:
   when:
 
@@ -974,7 +974,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    "half-run 2026-08-05 - the derived SSID and passphrase associate; the wrong-passphrase rejection is still unrun"
+  reason:    "written 2026-08-05 in test_provisioning.py; awaiting a run"
   commit:
   when:
 
@@ -1039,7 +1039,7 @@ tests:
   expected:  The configuration page lists it
   procedure: P-NETWORK
   status:    not done
-  reason:    "unrun - the page was served but its network list was never inspected. 4a6caf8 moved the scan to portal start, so verify the list survives"
+  reason:    "written 2026-08-05 in test_provisioning.py, and it also guards the scan moving out of the request path in 4a6caf8; awaiting a run"
   commit:
   when:
 
@@ -1527,7 +1527,7 @@ tests:
   expected:  No passphrase in any response body
   procedure: P-NETWORK
   status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
+  reason:    "written 2026-08-05 in test_provisioning.py as the CP-008 check - an unreadable submission must not read as a missing field; awaiting a run"
   commit:
   when:
 

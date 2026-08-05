@@ -65,11 +65,21 @@ def pytest_addoption(parser):
 # Cost is the tiebreaker inside a phase, not across phases: `slow` sorts after
 # `fast`, and anything that resets the board or injects a fault sorts last
 # within its phase so the quieter tests do not pay for the recovery.
-PHASE = {"breadandbutter": 0, "deviation": 1, "exception": 2}
+# Provisioning comes first because it is where the device's life starts: an
+# unconfigured board reaches no broker, so every measurement test downstream
+# would fail for the same upstream reason and read as a dozen defects.
+PHASE = {"provisioning": 0, "breadandbutter": 1, "deviation": 2, "exception": 3}
 COST = {"fast": 0, "slow": 1}
+
+# Both early phases are gates. A gate failure skips everything in a *later*
+# phase — not the whole run — so a broken portal still lets its own siblings
+# report, and the output says which step of the journey broke rather than
+# burying it under everything it made impossible.
+GATES = ("provisioning", "breadandbutter")
 
 
 def pytest_configure(config):
+    config.addinivalue_line("markers", "provisioning: the portal, from blank device to joined — the first gate")
     config.addinivalue_line("markers", "breadandbutter: the device does its job — the gate")
     config.addinivalue_line("markers", "deviation: normal operation, not the simplest case")
     config.addinivalue_line("markers", "exception: a fault or malfunction")
@@ -91,21 +101,33 @@ def pytest_collection_modifyitems(config, items):
     items.sort(key=rank)
 
 
+def _phase_of(item):
+    marks = {m.name for m in item.iter_markers()}
+    return min((PHASE[m] for m in marks if m in PHASE), default=PHASE["deviation"])
+
+
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
     marks = {m.name for m in item.iter_markers()}
-    if report.when in ("setup", "call") and report.failed and "breadandbutter" in marks:
-        item.session.gate_failed = item.name
+    gate = next((m for m in GATES if m in marks), None)
+    if report.when in ("setup", "call") and report.failed and gate:
+        # Keep the earliest gate that broke: a later one failing is usually a
+        # consequence, and naming the consequence sends the reader downstream of
+        # the cause.
+        prior = getattr(item.session, "gate_failed", None)
+        if prior is None or PHASE[gate] < prior[1]:
+            item.session.gate_failed = (item.name, PHASE[gate])
 
 
 def pytest_runtest_setup(item):
     failed = getattr(item.session, "gate_failed", None)
-    if failed and "breadandbutter" not in {m.name for m in item.iter_markers()}:
+    if failed and _phase_of(item) > failed[1]:
+        name = failed[0]
         pytest.skip(
-            f"{failed} failed — the device is not doing its job, so nothing below "
-            "it can be attributed"
+            f"{name} failed — an earlier step of the journey is broken, so "
+            "nothing after it can be attributed"
         )
 
 
@@ -384,6 +406,30 @@ def broker(wb):
     if not status.get("running"):
         wb.mqtt_start()
     return wb
+
+
+NVS_OFFSET = "0x9000"
+NVS_SIZE = 24 * 1024      # the nvs partition in partitions.csv
+
+
+@pytest.fixture
+def unprovisioned(wb, dut):
+    """A device with no stored configuration, so it enters Provisioning.
+
+    Without this a portal test passes or fails on whatever the previous test
+    left behind: a provisioned board boots straight to operational and never
+    raises the portal, so the test fails describing a portal defect that does
+    not exist.
+
+    Blanking NVS is the available lever. FR-SUP-06's button hold would be
+    gentler, but it needs a GPIO wired to the board and this bench has none —
+    which is recorded as the `button-gpio` capability being unavailable.
+    """
+    result = wb.flash_region("SLOT1", "esp32c3", NVS_OFFSET, b"\xff" * NVS_SIZE)
+    assert result.get("ok"), f"could not blank NVS, so the portal cannot be reached: {result}"
+    yield
+    # Deliberately not restored. The device is left as the test left it, and the
+    # provisioning phase ends by configuring it for everything downstream.
 
 
 def decoded_values(line):

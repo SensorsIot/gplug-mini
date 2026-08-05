@@ -729,6 +729,43 @@ class WorkbenchDriver:
             raise CommandTimeout(f"POST /api/firmware/upload: {e}")
         return data
 
+    def flash_region(self, slot: str, chip: str, offset: str, data: bytes,
+                     timeout: int = 180) -> dict:
+        """POST /api/flash — write raw bytes at an offset.
+
+        The part name must be `bin@<offset>`; a part named just `<offset>` is
+        stored as a plain file and silently never flashed.
+
+        This exists for one job: blanking NVS so a device re-enters Provisioning.
+        Holding the portal button would be cleaner, but that needs a GPIO wired
+        to the board and this bench has none — so the test that needs an
+        unprovisioned device would otherwise only pass on a device that happened
+        to already be unprovisioned, which is not a test.
+        """
+        boundary = "----WorkbenchFlash"
+        parts = b""
+        for name, value in (("slot", slot), ("chip", chip)):
+            parts += (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'
+            ).encode()
+        parts += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="bin@{offset}"; filename="blob.bin"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            f"{self.base_url}/api/flash", data=parts,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except Exception as e:
+            raise CommandTimeout(f"POST /api/flash: {e}")
+
     def firmware_delete(self, project: str, filename: str) -> dict:
         """DELETE /api/firmware/delete — delete a firmware file."""
         url = f"{self.base_url}/api/firmware/delete"
