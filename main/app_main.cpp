@@ -6,7 +6,6 @@
 //
 // The startup indication is red -> green -> blue, 500 ms each (FSD §11.3).
 
-#include <cstdarg>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -69,22 +68,13 @@ void startup_indication() {
 size_t values_this_cycle = 0;
 unsigned undecoded = 0;
 
-// One cycle's worth of decoded values, assembled as JSON. Published as a single
-// state message so Home Assistant sees one consistent set rather than a dribble
-// of separate readings.
-char state_json[768];
-size_t state_len = 0;
+// One cycle's worth of decoded values. Published as a single state message so
+// Home Assistant sees one consistent set rather than a dribble of separate
+// readings (FR-AGG-03), keeping the first occurrence of each register
+// (FR-AGG-04) and staying silent when nothing decoded (FR-AGG-06).
+gplug::CycleSet cycle_set;
 char meter_serial[32] = "";
 bool discovery_done = false;
-
-void json_append(const char* fmt, ...) {
-  if (state_len + 2 >= sizeof(state_json)) return;
-  va_list args;
-  va_start(args, fmt);
-  const int n = vsnprintf(state_json + state_len, sizeof(state_json) - state_len, fmt, args);
-  va_end(args);
-  if (n > 0 && state_len + static_cast<size_t>(n) < sizeof(state_json)) state_len += n;
-}
 
 void on_value(const dlms_parser::AxdrCapture& c) {
   std::array<char, 32> obis_buf;
@@ -125,19 +115,21 @@ void on_value(const dlms_parser::AxdrCapture& c) {
   uint64_t raw = 0;
   for (auto b : c.value) raw = (raw << 8) | b;
 
-  json_append("%s\"%s\":", state_len ? "," : "{", entry->label);
-
   if (entry->kind == gplug::Kind::CUMULATIVE) {
     ESP_LOGI(TAG, "%-20s = %llu %s (scaler %d)", entry->label,
              static_cast<unsigned long long>(raw), entry->unit,
              c.has_scaler_unit ? c.scaler : 0);
     // Serialised as an integer, never through a float: the value is exact here
     // and must stay exact all the way to the broker (FR-DEC-04).
-    json_append("%llu", static_cast<unsigned long long>(raw));
+    if (!cycle_set.add_integer(entry->label, raw)) {
+      ESP_LOGD(TAG, "%s already in this cycle — later value discarded (FR-AGG-04)", entry->label);
+    }
   } else {
     const double v = static_cast<double>(c.value_as_float_with_scaler_applied());
     ESP_LOGI(TAG, "%-20s = %.3f %s", entry->label, v, entry->unit);
-    json_append("%.3f", v);
+    if (!cycle_set.add_real(entry->label, v)) {
+      ESP_LOGD(TAG, "%s already in this cycle — later value discarded (FR-AGG-04)", entry->label);
+    }
   }
 }
 
@@ -171,10 +163,11 @@ void publish_cycle() {
              static_cast<unsigned>(n), meter_serial);
   }
 
-  if (state_len == 0) return;
-  json_append("}");
-  gplug::mqtt_publish_state(state_json);
-  ESP_LOGI(TAG, "published %u B state", static_cast<unsigned>(state_len));
+  if (cycle_set.empty()) return;   // FR-AGG-06
+  const char* state = cycle_set.json();
+  gplug::mqtt_publish_state(state);
+  ESP_LOGI(TAG, "published %u value(s), %u B state",
+           static_cast<unsigned>(cycle_set.size()), static_cast<unsigned>(std::strlen(state)));
 }
 
 }  // namespace
@@ -215,8 +208,7 @@ extern "C" void app_main() {
     if (!gplug::cycle_ended(now_ms(), last_byte, cycle.size())) continue;
 
     values_this_cycle = 0;
-    state_len = 0;
-    state_json[0] = '\0';
+    cycle_set.clear();
 
     // A cycle that opens on a frame boundary starts with the closing flag of
     // the frame before it, and that one byte costs the whole cycle (FR-MTR-06,

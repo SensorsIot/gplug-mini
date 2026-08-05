@@ -103,6 +103,72 @@ void discovery_payloads() {
         std::string(topic) == "gplug/aa:bb/state", "state topic matches Appendix D");
 }
 
+// TS-026 — FR-AGG-03. One cycle produces one message.
+//
+// The rule is about the set, not the values: a device that published each value
+// as it decoded would satisfy every other requirement here and still be wrong,
+// because Home Assistant would see a household's registers arrive as eight
+// separate states and graph the gaps between them.
+void one_publish_per_cycle() {
+  gplug::CycleSet set;
+  check(set.empty(), "a fresh set holds nothing");
+
+  set.add_integer("active_energy_plus", 25149419);
+  set.add_real("active_power_plus", 777.0);
+  check(set.size() == 2, "both values are in the one set");
+
+  const std::string first = set.json();
+  const std::string again = set.json();
+  printf("       %s\n", first.c_str());
+  check(first == again, "the set serialises to the same message when read twice");
+  check(first.front() == '{' && first.back() == '}', "one complete JSON object, not a fragment");
+
+  set.clear();
+  check(set.empty(), "the set is empty again for the next cycle");
+}
+
+// TS-027 — FR-AGG-04. A register repeated within one cycle keeps its first
+// value. The later one is discarded, and discarding is what must be asserted:
+// both values are plausible readings, so an implementation that overwrites
+// produces a message nothing downstream can tell is wrong.
+void first_occurrence_retained() {
+  gplug::CycleSet set;
+  check(set.add_integer("active_energy_plus", 25149419), "the first occurrence is stored");
+  check(!set.add_integer("active_energy_plus", 99999999), "the second is refused");
+  check(set.size() == 1, "the register appears once in the set");
+
+  // The rule is per register, not per cycle: a different register still lands.
+  // Asserted before the set is serialised, because serialising closes it.
+  check(set.add_real("active_power_plus", 777.0), "a different register is unaffected");
+
+  const std::string json = set.json();
+  printf("       %s\n", json.c_str());
+  check(json.find("25149419") != std::string::npos, "the first value is the one published");
+  check(json.find("99999999") == std::string::npos, "the later value is nowhere in the message");
+
+  // Closing is one-way. A value arriving after the message was built would
+  // otherwise be dropped in silence, which reads exactly like the duplicate
+  // rule working and is a different bug entirely.
+  check(!set.add_integer("late_arrival", 1), "a set that has been serialised takes nothing more");
+}
+
+// TS-029 — FR-AGG-06. A cycle that decoded nothing publishes nothing.
+//
+// The prohibited outcome is the point. An empty or all-zero payload is worse
+// than silence, because Home Assistant records it as a reading and a zeroed
+// cumulative register reads as a household that consumed nothing.
+void empty_set_not_published() {
+  gplug::CycleSet set;
+  check(set.empty(), "noise decoded to no values, so the set is empty");
+  check(std::string(set.json()).empty(), "an empty set yields no message at all — not '{}'");
+
+  set.add_integer("active_energy_plus", 0);
+  check(!set.empty(), "a set holding a genuine zero is not an empty set");
+  printf("       %s\n", set.json());
+  check(std::string(set.json()) == "{\"active_energy_plus\":0}",
+        "a real zero reading is published — only the absence of values is suppressed");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -113,6 +179,9 @@ int main(int argc, char** argv) {
   if (name == "cycle") cycle_boundary();
   else if (name == "obis") obis_mapping();
   else if (name == "discovery") discovery_payloads();
+  else if (name == "oneset") one_publish_per_cycle();
+  else if (name == "firstwins") first_occurrence_retained();
+  else if (name == "emptyset") empty_set_not_published();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

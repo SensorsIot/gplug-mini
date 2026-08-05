@@ -372,25 +372,25 @@ tests:
   verifies: [FR-AGG-03]
   tier:     host
   needs:    []
-  does:      Feed one complete cycle
-  expected:  Exactly one publish call
+  does:      Builds one set from a cycle and reads the message it produces
+  expected:  One message per cycle, complete and stable when read twice
   procedure: ctest -R TS-026
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:
+  commit:    9f359b1
+  when:      2026-08-05T17:20Z
 
 - id: TS-027
   verifies: [FR-AGG-04]
   tier:     host
   needs:    []
-  does:      Feed a capture with a register in two blocks and differing values
-  expected:  The first value is retained
+  does:      Adds the same register twice with differing values, then a different register
+  expected:  The first value is published, the later one appears nowhere
   procedure: ctest -R TS-027
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:
+  commit:    9f359b1
+  when:      2026-08-05T17:20Z
 
 - id: TS-028
   verifies: [FR-AGG-05]
@@ -408,13 +408,13 @@ tests:
   verifies: [FR-AGG-06]
   tier:     host
   needs:    []
-  does:      Feed 20 bytes of noise, then silence
-  expected:  No publish
+  does:      Reads the message from a set that decoded nothing, then from one holding a real zero
+  expected:  No message at all for the empty set; the genuine zero is published
   procedure: ctest -R TS-029
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:
+  commit:    9f359b1
+  when:      2026-08-05T17:20Z
 
 - id: TS-030
   verifies: [FR-SUP-01]

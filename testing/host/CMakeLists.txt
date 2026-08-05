@@ -76,6 +76,10 @@ add_test(NAME TS-011.crc-invalid-frame-discarded
 add_test(NAME TS-013.identity-absent
          COMMAND test_decode noidentity ${FIXTURES}/e450_serial8.hex)
 
+add_test(NAME TS-026.one-publish-per-cycle COMMAND test_cores oneset)
+add_test(NAME TS-027.first-occurrence-retained COMMAND test_cores firstwins)
+add_test(NAME TS-029.empty-set-not-published COMMAND test_cores emptyset)
+
 add_test(NAME TS-006.cycle-boundary COMMAND test_cores cycle)
 add_test(NAME TS-007.obis-mapping   COMMAND test_cores obis)
 add_test(NAME TS-008.discovery-payloads COMMAND test_cores discovery)
