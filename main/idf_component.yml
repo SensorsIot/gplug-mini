@@ -1,5 +1,5 @@
 ## Managed dependencies. dependencies.lock is committed, managed_components/ is
-## not — the resolved version is pinned in the repository (conventions.md).
+## not — the resolved version is pinned in the repository (docs/Harness/standards/engineering.md).
 dependencies:
   idf: ">=6.0"
   esphome/dlms_parser: "^2.1.0"

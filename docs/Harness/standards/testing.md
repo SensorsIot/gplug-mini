@@ -69,6 +69,40 @@ at host and wire behaviour at target or bench. **L2** is host throughout.
   only checks "did it recover" passes when the device recovers by rebooting, which
   is the failure being tested for.
 
+## Test framework
+
+**Host tier: CMake and CTest, C++20, under `testing/host/`.** The same language and
+standard as the firmware, so a host test exercises the code that ships rather
+than a reimplementation of it — a suite in another language can only test a
+second version of the logic, which is the one kind of test that cannot fail
+usefully. No test framework is pulled in: assertions and one CTest entry per case
+are enough, and each case names the property that breaks rather than reporting
+"the decode test failed".
+
+`dlms_parser` is fetched by tag, matching the version the firmware pins, because
+these tests exist to notice when its behaviour changes. A branch would let it
+move underneath them.
+
+```bash
+cmake -S testing/host -B build/host && cmake --build build/host
+ctest --test-dir build/host --output-on-failure
+```
+
+**Target tier: Unity**, which ESP-IDF bundles.
+
+## The release gate
+
+Bench tests need the Embedded Workbench, which a GitHub-hosted runner cannot
+reach. **Tagging is the human assertion that the bench suite passed** (FSD §20.2).
+
+This is a deliberate position rather than a missing gate, and it carries an
+obligation: run the bench suite before tagging. Automating it would require a
+self-hosted runner on the bench network, which this project does not have.
+
+After flashing the production build on the bench, confirm it boots, connects WiFi
+and MQTT, and reports no meter data. That is the only check covering the seam the
+simulated build cannot exercise.
+
 ## Test data
 
 The host tier runs against published E450 captures, committed as fixtures.
@@ -92,6 +126,23 @@ being imported wholesale.
 ---
 
 # Running a test
+
+### Driving a device
+
+Flashing and bench testing go through the Embedded Workbench's HTTP API. **Do not
+SSH into the workbench Pi to operate it** — every operation has an endpoint, and
+reaching for SSH means the API is missing a capability that should be added there.
+
+| Purpose | Endpoint |
+|---|---|
+| Flash over USB | `POST /api/flash` with `bin@<offset>` parts |
+| Firmware update to a deployed board | `POST /api/ota` |
+| MQTT broker for bench tests | `POST /api/mqtt/start` |
+| WiFi AP with captive-portal provisioning | the workbench WiFi endpoints |
+| Serial console | the RFC2217 proxy |
+
+Bench tests are Python and drive these endpoints; host tests are C++ and touch
+nothing outside the process.
 
 ## Rules that hold for every run
 

@@ -58,5 +58,23 @@ interface spec wins on hardware behaviour and the FSD wins on what the firmware
 owes.
 
 All three planes are present-state and single-home: state a fact once, link to it
-from anywhere else. See
-[`Harness/standards/documentation.md`](Harness/standards/documentation.md).
+from anywhere else.
+
+## Writing rules
+
+**Present-state.** Write what is true now, in the present tense. No history, no
+rationale narrative, no temporal comparison. Delete on sight: "now uses",
+"previously", "as of v2", "we decided to", "legacy", "this was changed because".
+Version history belongs in `git log`. The FSD's `change_history` metadata block is
+the one sanctioned exception, because a historical test result has to be tied to
+the exact spec revision that produced it.
+
+**One canonical home.** Every fact is stated once; anywhere else that needs it,
+link. Two copies of a fact are two facts the moment one is edited, and the reader
+has no way to tell which is current. The FSD does not restate the interface spec;
+the Harness does not restate the FSD.
+
+The interface spec carries its own honesty rule, worth preserving in edits: each
+number is marked as a property of the interface or an implementation choice.
+Blurring the two is how an arbitrary buffer size acquires the authority of a
+protocol constant.

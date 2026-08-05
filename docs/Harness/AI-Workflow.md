@@ -69,7 +69,7 @@ without USB access to a device in a meter cabinet.
 ## Deploying to a device
 
 The device is flashed and driven through the Embedded Workbench, over its HTTP
-API. See [`project/conventions.md`](project/conventions.md) for the endpoints and
+API. See [`standards/testing.md`](standards/testing.md) for the endpoints and
 the constraint that goes with them.
 
 ## Roles
