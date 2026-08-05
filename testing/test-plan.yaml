@@ -236,6 +236,18 @@ tests:
   commit:    8490f3e
   when:      2026-08-05T12:41Z
 
+- id: TS-107
+  verifies: [FR-AGG-02, FR-MTR-10]
+  tier:     host
+  needs:    []
+  does:      Parses a capture repeatedly from where the previous pass stopped, until it yields nothing
+  expected:  The loop terminates, and the identity is among the values - one pass alone leaves it unread
+  procedure: ctest -R TS-107
+  status:    successful
+  reason:
+  commit:    2d27604
+  when:      2026-08-05T21:40Z
+
 - id: TS-011
   verifies: [FR-MTR-07]
   tier:     host

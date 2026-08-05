@@ -75,6 +75,9 @@ add_test(NAME TS-023.leading-flags-skipped
 add_test(NAME TS-024.midframe-prefix-then-boundary
          COMMAND test_decode midprefix ${FIXTURES}/e450_serial8.hex)
 
+add_test(NAME TS-107.parse-until-exhausted
+         COMMAND test_decode exhaust ${FIXTURES}/e450_serial8.hex)
+
 add_test(NAME TS-011.crc-invalid-frame-discarded
          COMMAND test_decode crcdrop ${FIXTURES}/e450_serial8.hex)
 add_test(NAME TS-013.identity-absent

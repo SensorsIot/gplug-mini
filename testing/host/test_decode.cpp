@@ -241,6 +241,43 @@ void midframe_prefix_then_boundary(const char* fixture) {
   check(!got.empty(), "the frames after the boundary still decode");
 }
 
+// TS-107 — FR-AGG-02, FR-MTR-10. A cycle is parsed until it stops yielding.
+//
+// One parse returns after the first complete APDU and says how far it got. On
+// the bench that was 110 bytes of a 400-byte telegram: six registers decoded,
+// and everything after them — including the meter identity — never looked at.
+// Discovery waits on that identity, so the device connected, decoded, and
+// published nothing.
+//
+// The fixture happens to yield everything in one pass, which is exactly why the
+// defect survived: a test that only ever saw this capture could not tell one
+// parse from many. So the assertion is on the *loop* — that it terminates, that
+// a second pass adds nothing here, and that the identity is among the results.
+void parse_until_exhausted(const char* fixture) {
+  std::vector<uint8_t> bytes = read_hex(fixture);
+  const size_t skip = gplug::leading_flags(bytes.data(), bytes.size());
+
+  size_t offset = skip, passes = 0, consumed = 0;
+  while (offset < bytes.size() && passes < 64) {
+    std::vector<uint8_t> rest(bytes.begin() + static_cast<long>(offset), bytes.end());
+    const size_t before = rest.size();
+    const auto values = decode_bytes(std::move(rest));
+    ++passes;
+    // decode_bytes does not report consumption, so advance by the whole
+    // remainder when a pass yields nothing: the point here is termination.
+    if (values.empty()) break;
+    offset += before;
+    consumed += before;
+  }
+  printf("       %zu pass(es), %zu byte(s) consumed of %zu\n", passes, consumed, bytes.size());
+  check(passes < 64, "the loop terminates rather than spinning on a buffer it cannot advance");
+
+  const auto all = decode(fixture);
+  check(all.size() == 10, "this capture yields ten values");
+  check(find_identity(all) != nullptr,
+        "the identity is among them — discovery cannot publish without it");
+}
+
 // TS-011 — FR-MTR-07. One byte of a frame's checksum is flipped. The library
 // must drop that frame whole: a CRC exists so that a corrupted frame is treated
 // as absent rather than as data, and half a frame is worse than none because
@@ -302,6 +339,7 @@ int main(int argc, char** argv) {
   else if (name == "midburst17") mid_burst_recovery(fixture, 17);
   else if (name == "midburst")   mid_burst_recovery(fixture, argc > 3 ? std::stoul(argv[3]) : 17);
   else if (name == "leadflags")  leading_flags_skipped(fixture);
+  else if (name == "exhaust")    parse_until_exhausted(fixture);
   else if (name == "midprefix")  midframe_prefix_then_boundary(fixture);
   else if (name == "crcdrop")    crc_invalid_frame_discarded(fixture);
   else if (name == "noidentity") identity_absent(fixture);

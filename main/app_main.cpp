@@ -71,6 +71,21 @@ void report_reset_reason() {
   ESP_LOGI(TAG, "reset reason: %s (%d)", name, static_cast<int>(r));
 }
 
+// The same line, once the device is up.
+//
+// FR-WDT-04 says the reason must be *available* on the console after boot, and
+// printing it at 200 ms does not achieve that on this hardware: SLOT1 is a
+// native USB JTAG device, so a reset re-enumerates the port and the first ~2.5 s
+// of output goes with it. Measured — the earliest line any monitor sees after a
+// reset is t=2647 ms, and the reason is long gone by then.
+//
+// So it is reported a second time after the network is up, which is both
+// observable and the more useful moment: a device that has been quietly
+// resetting says so on a line that survives.
+void report_reset_reason_again() {
+  report_reset_reason();
+}
+
 // FR-WDT-01/02 — the main loop is subscribed to the task watchdog.
 //
 // Only this task. It is the one that must keep running for the device to be
@@ -257,6 +272,7 @@ extern "C" void app_main() {
   gplug::mqtt_start(conf);
   gplug::indicate(gplug::Indication::Operational);   // §11.3: dark between publications
   gplug::ota_start();
+  report_reset_reason_again();   // FR-WDT-04, past the USB re-enumeration window
 
   dlms_parser::DlmsParser parser(on_value, nullptr);
   parser.load_default_patterns();
@@ -307,14 +323,36 @@ extern "C" void app_main() {
     // TS-023). Only leading flags go — the payload behind them still decodes.
     const size_t skip = gplug::leading_flags(cycle.data(), cycle.size());
     if (skip) ESP_LOGD(TAG, "skipped %u leading flag byte(s)", static_cast<unsigned>(skip));
-    const auto result = parser.parse({ cycle.data() + skip, cycle.size() - skip });
+
+    // Parsed until the buffer stops yielding, not once.
+    //
+    // One call returns after the first complete APDU and reports how far it
+    // got: on the bench that was 110 bytes of a 400-byte telegram, so six
+    // registers decoded and everything after them — including the meter
+    // identity — was never looked at. Home Assistant discovery waits on that
+    // identity (FR-HA-03), so the device connected, decoded, and published
+    // nothing at all.
+    //
+    // A pass consuming zero bytes ends it, so a buffer the parser cannot
+    // advance through terminates rather than spinning.
+    size_t offset = skip, objects = 0, consumed = 0, passes = 0;
+    while (offset < cycle.size()) {
+      const auto pass = parser.parse({ cycle.data() + offset, cycle.size() - offset });
+      objects += pass.count;
+      consumed += pass.bytes_consumed;
+      ++passes;
+      if (pass.bytes_consumed == 0) break;
+      offset += pass.bytes_consumed;
+    }
+    struct { size_t count, bytes_consumed; } result{ objects, consumed };
     // Stack headroom after the parse, not before: the parser recurses over the
     // AXDR structure, so the depth depends on the telegram and the worst case
     // is whatever the meter sends, not whatever we tested with.
-    ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed, %u B stack free",
+    ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed in %u pass(es), %u B stack free",
              static_cast<unsigned>(cycle.size()),
              static_cast<unsigned>(result.count),
              static_cast<unsigned>(result.bytes_consumed),
+             static_cast<unsigned>(passes),
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     if (result.count == 0) {
       // A burst arrived and nothing decoded. Distinct from silence, and worth
