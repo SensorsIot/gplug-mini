@@ -16,16 +16,30 @@ Before proposing something that reverses a settled decision, read
 [`../decisions.md`](../decisions.md) §5 — ten alternatives are recorded there with
 the reason each was dropped. Several look like obvious improvements in isolation.
 
-**2. Build per the Harness.** Follow [`standards/`](standards/) and
-[`project/`](project/). Reuse before adding. Make the smallest change that
-satisfies the rule — no speculative scope, no drive-by refactors.
+**2. Declare and write the test — before the code.** The requirement's contract
+comes first (step 1), then its entry in
+[`../../testing/test-plan.yaml`](../../testing/test-plan.yaml), then the
+executable test. Declaring it early is what surfaces equipment that does not
+exist and interfaces nobody has decided, while both are still cheap. Mark a test
+for an unimplemented feature expected-to-fail — `WILL_FAIL` in CTest, `xfail` in
+pytest — so the suite stays green and announces itself the day the feature lands.
 
-**3. Test — the gate, not an afterthought.** A change is **not done** until its
-test exists and passes. Per [`standards/testing.md`](standards/testing.md): put
-the case at the cheapest tier that can catch the failure, name the requirement ID
-it verifies, and run the suite green. A bug fix writes its **regression test
-first**, and that test must fail before the fix and pass after — a regression test
-that never failed proves nothing.
+> A test written after the code describes the code rather than checking it. It
+> asserts what the implementation happens to do, including the bug.
+
+Where code already exists, that order cannot be replayed: write the test from the
+contract with the implementation closed, then break the code deliberately and
+watch the test go red before restoring. A test that has only ever been green is a
+claim, not a check.
+
+**3. Build per the Harness.** Follow [`standards/`](standards/) and
+[`project/`](project/). Reuse before adding. Make the smallest change that
+satisfies the rule — no speculative scope, no drive-by refactors. The change is
+**not done** until its test passes. Per
+[`standards/testing.md`](standards/testing.md): put the case at the cheapest tier
+that can catch the failure, and name the requirement ID it verifies. A bug fix
+writes its **regression test first**, and that test must fail before the fix and
+pass after — a regression test that never failed proves nothing.
 
 **4. Reconcile the documentation.**
 - The **FSD** absorbs new or changed behaviour — *verify, don't transcribe*. If
