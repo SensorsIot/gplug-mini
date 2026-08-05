@@ -49,14 +49,24 @@ if [ -z "$BIN" ]; then
     skip "$id" "binary inspection" "no firmware binary in $BUILD"
   done
 else
-  # TS-097 · FR-BLD-04 — the production binary carries no capture data.
-  # The fixture's opening bytes are the signature to look for.
-  ! grep -qa '7E A0 84 CE FF 03' "$BIN"
-  check TS-097 "production binary contains no embedded capture" $?
-
-  # TS-094/095/098 · FR-BLD-01/02/05 — the version string tells the truth about
-  # what it was built from.
+  # TS-094/095/097/098 · FR-BLD-01/02/04/05 — the version string tells the truth
+  # about what it was built from, and the production binary carries no capture.
+  #
+  # The version is read first because it says which variant this is, and three of
+  # the four checks below only apply to one variant. A check that asserts a
+  # production rule against a simulated image fails for a reason that has nothing
+  # to do with the requirement, which is worse than not running it.
   ver=$(strings "$BIN" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9a-g]+)?(-sim)?$' | head -1)
+
+  # TS-097 · FR-BLD-04 — the production binary carries no capture data.
+  # The fixture's opening bytes are the signature to look for. A simulated image
+  # is *required* to contain one, so asserting this against it inverts the rule.
+  case "$ver" in
+    *-sim) skip TS-097 "embedded capture" "a simulated build is meant to carry one" ;;
+    *)     ! grep -qa '7E A0 84 CE FF 03' "$BIN"
+           check TS-097 "production binary contains no embedded capture" $? ;;
+  esac
+
   if [ -z "$ver" ]; then
     for id in TS-094 TS-095 TS-098; do skip "$id" "version string" "none found in $BIN"; done
   else
@@ -69,13 +79,21 @@ else
       # is only meaningful when the binary was built from HEAD — comparing a
       # stale artefact against a moved HEAD reports a defect that is not there,
       # which is worse than reporting nothing.
-      [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}(-sim)?$ ]]
-      check TS-095 "untagged build: version carries a short commit hash" $?
-      built=${ver#*-}; built=${built%-sim}
-      if [ "$built" = "$(git rev-parse --short HEAD)" ]; then
-        check TS-095 "the hash is HEAD" 0
+      # A manually dispatched build stamps the version it was given, so it has
+      # no hash to check and this claim does not apply to it. Recognised by the
+      # absence of a hash-shaped suffix rather than by an input, because the
+      # binary is the only evidence available here.
+      if [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-sim)?$ ]]; then
+        skip TS-095 "commit hash" "version was supplied to the build, not derived from git"
       else
-        skip TS-095 "hash equals HEAD" "binary built from $built, HEAD is $(git rev-parse --short HEAD)"
+        [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}(-sim)?$ ]]
+        check TS-095 "untagged build: version carries a short commit hash" $?
+        built=${ver#*-}; built=${built%-sim}
+        if [ "$built" = "$(git rev-parse --short HEAD)" ]; then
+          check TS-095 "the hash is HEAD" 0
+        else
+          skip TS-095 "hash equals HEAD" "binary built from $built, HEAD is $(git rev-parse --short HEAD)"
+        fi
       fi
     fi
     case "$ver" in

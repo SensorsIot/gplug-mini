@@ -1200,10 +1200,10 @@ tests:
   does:      Build the simulated variant
   expected:  The version string carries the `-sim` suffix
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    simulated build not produced by CI yet
-  commit:
-  when:
+  status:    successful
+  reason:
+  commit:    7c6e677
+  when:      2026-08-05T17:17Z
 
 - id: TS-099
   verifies: [FR-BLD-06]
