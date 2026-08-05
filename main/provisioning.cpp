@@ -321,8 +321,18 @@ bool provisioning_run() {
     ESP_LOGE(TAG, "HTTP server failed to start");
     return false;
   }
-  const httpd_uri_t save = { "/save", HTTP_POST, save_post, nullptr, false, false, nullptr };
-  const httpd_uri_t any  = { "/*",    HTTP_GET,  catch_all, nullptr, false, false, nullptr };
+  // Only the first four members are initialised. The websocket fields exist
+  // solely when CONFIG_HTTPD_WS_SUPPORT is on, so naming them makes the file
+  // depend on a Kconfig symbol that has nothing to do with this portal.
+  httpd_uri_t save = {};
+  save.uri = "/save";
+  save.method = HTTP_POST;
+  save.handler = save_post;
+
+  httpd_uri_t any = {};
+  any.uri = "/*";
+  any.method = HTTP_GET;
+  any.handler = catch_all;
   httpd_register_uri_handler(server, &save);
   httpd_register_uri_handler(server, &any);
 
