@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 #include "framing.h"
 #include "ha_discovery.h"
+#include "indicator.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "meter_source.h"
@@ -36,11 +37,6 @@ namespace {
 
 constexpr const char* TAG = "gplug";
 
-constexpr gpio_num_t LED_RED = GPIO_NUM_1;
-constexpr gpio_num_t LED_BLUE = GPIO_NUM_3;
-constexpr gpio_num_t LED_GREEN = GPIO_NUM_4;
-constexpr int LED_ON = 1;   // active high on this board revision
-constexpr int LED_OFF = 0;
 
 // One transmission is a few hundred bytes; a cycle that overruns this is a
 // defect worth seeing rather than a buffer worth growing.
@@ -100,25 +96,6 @@ void watchdog_start() {
     return;
   }
   ESP_LOGI(TAG, "task watchdog: main loop subscribed, %u ms", static_cast<unsigned>(cfg.timeout_ms));
-}
-
-void configure_leds() {
-  gpio_config_t cfg = {};
-  cfg.pin_bit_mask = (1ULL << LED_RED) | (1ULL << LED_BLUE) | (1ULL << LED_GREEN);
-  cfg.mode = GPIO_MODE_OUTPUT;
-  cfg.pull_up_en = GPIO_PULLUP_DISABLE;
-  cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  cfg.intr_type = GPIO_INTR_DISABLE;
-  ESP_ERROR_CHECK(gpio_config(&cfg));
-  for (auto led : { LED_RED, LED_GREEN, LED_BLUE }) gpio_set_level(led, LED_OFF);
-}
-
-void startup_indication() {
-  for (auto led : { LED_RED, LED_GREEN, LED_BLUE }) {
-    gpio_set_level(led, LED_ON);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    gpio_set_level(led, LED_OFF);
-  }
 }
 
 size_t values_this_cycle = 0;
@@ -222,6 +199,7 @@ void publish_cycle() {
   if (cycle_set.empty()) return;   // FR-AGG-06
   const char* state = cycle_set.json();
   gplug::mqtt_publish_state(state);
+  gplug::indicate_publish();   // FR-LED-02: one pulse per set that actually went
   ESP_LOGI(TAG, "published %u value(s), %u B state",
            static_cast<unsigned>(cycle_set.size()), static_cast<unsigned>(std::strlen(state)));
 }
@@ -238,8 +216,10 @@ extern "C" void app_main() {
   // reads identically whether it was a power cut or a hung task.
   report_reset_reason();
 
-  configure_leds();
-  startup_indication();
+  // One owner of the LED pins from here on. Two writers make a pattern that is
+  // neither, and the symptom is an indicator that looks almost right.
+  gplug::indicator_start();   // runs the BOOT sequence, then follows the state
+  gplug::indicate(gplug::Indication::Connecting);
 
   // FR-WDT-01/02. Subscribed after the LEDs so a board that cannot configure
   // GPIO fails visibly rather than by resetting every five seconds, which looks
@@ -264,6 +244,7 @@ extern "C" void app_main() {
   if (!gplug::config_usable(conf)) {
     ESP_LOGW(TAG, "no usable configuration (%s) — entering Provisioning",
              gplug::describe(gplug::config_fault(conf)));
+    gplug::indicate(gplug::Indication::Provisioning);   // FR-LED-01
     if (gplug::provisioning_run()) {
       ESP_LOGI(TAG, "configuration stored — restarting to use it");
     } else {
@@ -277,6 +258,7 @@ extern "C" void app_main() {
 
   gplug::wifi_start_and_wait(conf);
   gplug::mqtt_start(conf);
+  gplug::indicate(gplug::Indication::Operational);   // §11.3: dark between publications
 
   dlms_parser::DlmsParser parser(on_value, nullptr);
   parser.load_default_patterns();

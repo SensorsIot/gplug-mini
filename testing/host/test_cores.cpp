@@ -12,6 +12,7 @@
 #include "aggregator.h"
 #include "config.h"
 #include "ha_discovery.h"
+#include "indicator.h"
 #include "obis_map.h"
 #include "provisioning.h"
 
@@ -276,6 +277,58 @@ void ap_identity() {
         "a passphrase that does not fit reports failure, never a short one");
 }
 
+// TS-105 — FR-LED-05, FSD §11.3. No two indications look the same, and each
+// matches the table rather than something plausible.
+//
+// The second half matters more than the first. A set of patterns invented to be
+// merely distinct is self-consistent, and a test written from that code asserts
+// the invention — which is exactly what the first draft of this file did, with
+// a 1 s Connecting blink the spec puts at 5 s and a Updating pattern the spec
+// says alternates blue and green.
+void indications_distinguishable() {
+  using gplug::Indication;
+  using gplug::pattern_for;
+
+  const Indication all[] = { Indication::Boot, Indication::Provisioning,
+                             Indication::Connecting, Indication::Linked,
+                             Indication::Operational, Indication::Updating };
+  for (auto a : all) {
+    for (auto b : all) {
+      if (a == b) continue;
+      char what[96];
+      std::snprintf(what, sizeof(what), "indication %d differs from %d",
+                    static_cast<int>(a), static_cast<int>(b));
+      check(gplug::distinguishable(a, b), what);
+    }
+  }
+
+  // Each row of §11.3, read back.
+  const auto prov = pattern_for(Indication::Provisioning);
+  check(prov.a_blue && !prov.a_red && !prov.a_green && prov.period_ms == 0,
+        "PROVISIONING is blue steady");
+
+  const auto conn = pattern_for(Indication::Connecting);
+  check(conn.a_red && conn.period_ms == 5000, "CONNECTING is a red blink, 5 s period");
+
+  const auto linked = pattern_for(Indication::Linked);
+  check(linked.a_red && linked.period_ms == 1000, "LINKED is a red blink, 1 s period");
+
+  const auto oper = pattern_for(Indication::Operational);
+  check(!oper.a_red && !oper.a_green && !oper.a_blue && oper.period_ms == 0,
+        "OPERATIONAL is off between publications");
+  check(gplug::PUBLISH_PULSE_MS == 100, "the publication pulse is 100 ms");
+
+  const auto upd = pattern_for(Indication::Updating);
+  check(upd.a_blue && upd.b_green && upd.period_ms == 200,
+        "UPDATING alternates blue and green at 200 ms");
+
+  // The two red blinks differ only in rate, so the rate is what must hold. An
+  // edit making them equal leaves two states indistinguishable on the board
+  // while every colour assertion above still passes.
+  check(conn.period_ms != linked.period_ms,
+        "CONNECTING and LINKED blink at different rates — colour alone cannot separate them");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -291,6 +344,7 @@ int main(int argc, char** argv) {
   else if (name == "emptyset") empty_set_not_published();
   else if (name == "config")   config_validity();
   else if (name == "apident")  ap_identity();
+  else if (name == "leds")     indications_distinguishable();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

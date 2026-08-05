@@ -999,6 +999,18 @@ tests:
   commit:
   when:
 
+- id: TS-105
+  verifies: [FR-LED-05]
+  tier:     host
+  needs:    []
+  does:      Reads every pair of indications against each other, and each one against FSD 11.3's table
+  expected:  No two alike; every colour and period is the one the table names
+  procedure: ctest -R TS-105
+  status:    successful
+  reason:
+  commit:    a145708
+  when:      2026-08-05T19:55Z
+
 - id: TS-072
   verifies: [FR-LED-01]
   tier:     bench
