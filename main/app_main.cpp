@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "config.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "framing.h"
 #include "ha_discovery.h"
@@ -47,6 +48,58 @@ constexpr size_t MAX_CYCLE = 2048;
 
 uint32_t now_ms() {
   return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+
+// FR-WDT-04 — the reset reason, named, on the console at boot.
+//
+// Reported for every boot rather than only the interesting ones, because the
+// value of the line is in reading it when you did not expect to need it: a
+// device that has been quietly resetting for a week looks exactly like one that
+// has been up for a week, until this line says otherwise.
+void report_reset_reason() {
+  const esp_reset_reason_t r = esp_reset_reason();
+  const char* name = "unknown";
+  switch (r) {
+    case ESP_RST_POWERON:  name = "power-on";            break;
+    case ESP_RST_EXT:      name = "external reset";      break;
+    case ESP_RST_SW:       name = "software restart";    break;
+    case ESP_RST_PANIC:    name = "panic";               break;
+    case ESP_RST_INT_WDT:  name = "interrupt watchdog";  break;
+    case ESP_RST_TASK_WDT: name = "task watchdog";       break;
+    case ESP_RST_WDT:      name = "other watchdog";      break;
+    case ESP_RST_BROWNOUT: name = "brownout";            break;
+    case ESP_RST_DEEPSLEEP:name = "deep sleep wake";     break;
+    default: break;
+  }
+  ESP_LOGI(TAG, "reset reason: %s (%d)", name, static_cast<int>(r));
+}
+
+// FR-WDT-01/02 — the main loop is subscribed to the task watchdog.
+//
+// Only this task. It is the one that must keep running for the device to be
+// doing its job at all: it reads the meter, assembles cycles and publishes. The
+// network tasks are ESP-IDF's and retry on their own; subscribing them would
+// turn a broker outage into a reboot, which FR-WDT-05 forbids.
+void watchdog_start() {
+  // The IDF may already have initialised it from Kconfig. Both outcomes are
+  // fine and neither is an error worth aborting for — what matters is that this
+  // task ends up subscribed.
+  esp_task_wdt_config_t cfg = {};
+  cfg.timeout_ms = 5000;                    // FR-WDT-01 names 5 s
+  cfg.idle_core_mask = 0;                   // idle tasks are not ours to watch
+  cfg.trigger_panic = true;                 // reset, not a warning
+  const esp_err_t init = esp_task_wdt_init(&cfg);
+  if (init != ESP_OK && init != ESP_ERR_INVALID_STATE) {
+    ESP_LOGW(TAG, "task watchdog init failed (%s) — continuing unwatched",
+             esp_err_to_name(init));
+    return;
+  }
+  const esp_err_t add = esp_task_wdt_add(nullptr);
+  if (add != ESP_OK) {
+    ESP_LOGW(TAG, "could not subscribe to the task watchdog (%s)", esp_err_to_name(add));
+    return;
+  }
+  ESP_LOGI(TAG, "task watchdog: main loop subscribed, %u ms", static_cast<unsigned>(cfg.timeout_ms));
 }
 
 void configure_leds() {
@@ -180,8 +233,18 @@ extern "C" void app_main() {
   ESP_LOGI(TAG, "gPlug-mini %s (%s build, %s), IDF %s",
            app->version, GPLUG_BUILD_MARKER, gplug::meter_source_name(), app->idf_ver);
 
+  // FR-WDT-04 — before anything else can overwrite the evidence. A device that
+  // reboots in a meter cabinet leaves no other trace of why, and "it came back"
+  // reads identically whether it was a power cut or a hung task.
+  report_reset_reason();
+
   configure_leds();
   startup_indication();
+
+  // FR-WDT-01/02. Subscribed after the LEDs so a board that cannot configure
+  // GPIO fails visibly rather than by resetting every five seconds, which looks
+  // like a watchdog defect and is not one.
+  watchdog_start();
 
   // Storage first, then the configuration, then the network that depends on it.
   // A device that cannot open its storage still runs on build defaults rather
@@ -226,6 +289,13 @@ extern "C" void app_main() {
   uint8_t chunk[256];
 
   while (true) {
+    // FR-WDT-03: fed every pass, and a pass is at most the 200 ms read timeout
+    // even when the meter says nothing. A quiet line is normal — the meter is
+    // silent between transmissions and can be silent for far longer — so a
+    // watchdog fed only when data arrives would reset a healthy device on a
+    // quiet meter, which is the failure this requirement forbids.
+    esp_task_wdt_reset();
+
     const size_t n = gplug::meter_source_read(chunk, sizeof(chunk), 200);
     if (n > 0) {
       if (cycle.size() + n > MAX_CYCLE) {
