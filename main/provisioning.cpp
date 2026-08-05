@@ -35,6 +35,10 @@ constexpr const char* TAG = "prov";
 // trying rather than sitting in a portal forever (D-C3).
 constexpr uint32_t TIMEOUT_MS = 5 * 60 * 1000;
 
+// Often enough that a stalled portal is obvious within one read, rare enough
+// that five minutes of waiting does not fill the buffer.
+constexpr int64_t DIAG_PERIOD_US = 5 * 1000 * 1000;
+
 constexpr int DNS_PORT = 53;
 constexpr uint8_t AP_CHANNEL = 1;
 constexpr uint8_t AP_MAX_CLIENTS = 4;
@@ -341,8 +345,27 @@ bool provisioning_run() {
   httpd_register_uri_handler(server, &save);
   httpd_register_uri_handler(server, &any);
 
+  // A line every few seconds while the portal is up.
+  //
+  // Provisioning used to log once on entry and then sit silently for five
+  // minutes, so a bench session could not tell "waiting for a client" from
+  // "hung" — and on the first run it was hung, which took a JTAG halt-cause read
+  // to establish. Silence is the worst thing a long-running state can report.
+  //
+  // It carries what a session actually needs: the network to look for, how many
+  // clients have associated, and how much of the window is left.
   const int64_t deadline = esp_timer_get_time() + static_cast<int64_t>(TIMEOUT_MS) * 1000;
+  int64_t next_report = 0;
   while (!submitted && esp_timer_get_time() < deadline) {
+    const int64_t now = esp_timer_get_time();
+    if (now >= next_report) {
+      next_report = now + DIAG_PERIOD_US;
+      wifi_sta_list_t clients = {};
+      esp_wifi_ap_get_sta_list(&clients);
+      ESP_LOGI(TAG, "diag: state=provisioning ssid=%s clients=%d left=%llds",
+               ssid, clients.num,
+               static_cast<long long>((deadline - now) / 1000000));
+    }
     vTaskDelay(pdMS_TO_TICKS(200));
   }
 
