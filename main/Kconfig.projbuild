@@ -8,36 +8,38 @@ config GPLUG_SIM_METER
         Selected by building with sdkconfig.sim.defaults. A production image must
         never have this set; CI verifies that by inspecting the built binary.
 
-comment "Network — provisional, until the captive portal writes NVS"
+comment "Network — empty by default, so a device provisions itself"
 
-# The bench AP is a NetworkManager connection named gplug-bench that owns wlan0
-# and autoconnects, so the workbench's own /api/wifi/ap_start cannot have the
-# radio. The device joins that AP instead; these are bench credentials for a
-# bench network, not secrets.
+# These are EMPTY on purpose, and a shipped image must keep them so.
 #
-# BOTH benches broadcast this SSID, and both are ipv4.method=shared, so both
-# gateways are 10.42.0.1. The device joins whichever is stronger and there is no
-# way to tell from the device which one that was: the address it gets and the
-# broker it dials are identical either way. Start the broker on both, or the
-# device lands on the quiet one and reports only a TCP error.
+# FR-SUP-09 requires the device to treat SSID, passphrase and broker host as
+# required and enter Provisioning when any is absent. A build that carries
+# credentials makes them never absent, so the portal is unreachable and eleven
+# provisioning requirements are dead code in the field. That is what this
+# project shipped until 2026-08-05: `default "gplug-bench"`, which would have
+# sent every deployed device looking for a workbench.
+#
+# A bench run that wants to skip provisioning builds with
+# sdkconfig.bench.defaults, which fills them in. The convenience belongs to the
+# bench, not to the product.
 
 config GPLUG_WIFI_SSID
     string "WiFi SSID"
-    default "gplug-bench"
+    default ""
     help
-        Compile-time credentials, so a bench run needs no provisioning step.
-        A deployed device is provisioned through its captive portal and reads
-        credentials from NVS; until that exists, these are how it joins.
+        Empty ships. A device with no stored configuration and no built-in
+        credentials enters Provisioning on first boot, which is the intended
+        behaviour (FR-NVS-02, FR-SUP-09).
 
 config GPLUG_WIFI_PASSWORD
     string "WiFi password"
-    default "benchtest123"
+    default ""
 
 config GPLUG_MQTT_URI
     string "MQTT broker URI"
-    default "mqtt://10.42.0.1:1883"
+    default ""
     help
-        The bench AP is a NetworkManager shared connection, so the Pi is at
-        10.42.0.1 on that network and mosquitto listens on all interfaces.
+        Entered at the portal. §9.3 lists broker host and port among the
+        configuration the portal collects.
 
 endmenu

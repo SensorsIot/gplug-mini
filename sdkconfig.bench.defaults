@@ -1,0 +1,16 @@
+# Applied after sdkconfig.defaults for a bench build that should skip
+# provisioning:
+#   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.bench.defaults"
+#
+# The product ships with these empty so it provisions itself (FR-SUP-09). This
+# file exists so a bench session that is testing something else does not have to
+# walk the portal first — the convenience belongs to the bench, never to the
+# image that leaves it.
+#
+# gplug-bench is a NetworkManager shared connection, so its gateway is
+# 10.42.0.1 and mosquitto on that Pi is reachable there. Note that the AP is not
+# necessarily hosted by the workbench you are driving: measured 2026-08-05, the
+# board reached a broker only when the OTHER bench was running one.
+CONFIG_GPLUG_WIFI_SSID="gplug-bench"
+CONFIG_GPLUG_WIFI_PASSWORD="benchtest123"
+CONFIG_GPLUG_MQTT_URI="mqtt://10.42.0.1:1883"

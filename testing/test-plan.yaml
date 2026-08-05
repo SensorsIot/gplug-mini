@@ -1591,6 +1591,19 @@ tests:
   reason:    
   commit:    288f210
   when:      2026-08-05T14:20Z
+- id: TS-112
+  verifies: [FR-SUP-09]
+  kind:     security
+  tier:     other
+  needs:    []
+  does:      Searches a built production image for the bench WiFi credentials
+  expected:  Neither the bench SSID nor its passphrase appears in the binary
+  procedure: tools/check-artefacts.sh
+  status:    not done
+  reason:    written; awaiting a CI run
+  commit:
+  when:
+
 - id: TS-101
   verifies: [FR-BLD-08]
   kind:     negative

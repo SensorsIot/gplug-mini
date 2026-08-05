@@ -49,6 +49,17 @@ if [ -z "$BIN" ]; then
     skip "$id" "binary inspection" "no firmware binary in $BUILD"
   done
 else
+  # TS-112 · FR-SUP-09 — a shipped image carries no credentials.
+  #
+  # If it does, SSID and broker host are never absent, the device never enters
+  # Provisioning, and eleven requirements are dead code in the field. This
+  # project shipped exactly that until 2026-08-05, so the check inspects the
+  # binary rather than trusting the Kconfig default it was built from.
+  case "$(strings "$BIN" | grep -cE '^(gplug-bench|benchtest123)$')" in
+    0) check TS-112 "no bench credentials in the image" 0 ;;
+    *) check TS-112 "no bench credentials in the image" 1 ;;
+  esac
+
   # TS-094/095/097/098 · FR-BLD-01/02/04/05 — the version string tells the truth
   # about what it was built from, and the production binary carries no capture.
   #
