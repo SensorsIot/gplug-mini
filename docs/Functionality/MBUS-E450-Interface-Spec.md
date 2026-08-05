@@ -70,10 +70,18 @@ internal pull-up and pull-down disabled, since either will fight the front-end's
 output stage.
 
 At 2400 baud with 11 bits per character (start + 8 data + parity + stop), the
-line carries ~218 bytes/s. A maximum-length 512-byte frame would take **2.3 s** —
-longer than the 2000 ms burst-gap threshold in §4.2, and half the 5 s push
-interval. Real frames must therefore be far shorter than the 512-byte ceiling,
-and a receive buffer has to hold a whole burst rather than a whole frame.
+line carries ~218 bytes/s.
+
+Frames are far shorter than the 512-byte protocol ceiling, and not by accident:
+the meter's **HDLC transmit buffer is 128 bytes** (§7.6), so it fragments every
+telegram to fit. Measured frames run 63–141 bytes on the wire, about 0.3–0.65 s
+each, and a complete telegram of 3–4 frames is 338 bytes (1.55 s) and 491 bytes
+(2.25 s) in the two reference captures.
+
+Two consequences for a reader. A receive buffer must hold a whole **telegram**,
+not a frame — no single frame is a complete reading. And a telegram occupies a
+third to a half of the 5 s push interval, so the line is busy far more of the
+time than the frame sizes suggest.
 
 ---
 
@@ -109,21 +117,35 @@ choose differently:
 Frame layout (HDLC type 3, no segmentation):
 
 ```
-7E | A0 LL | dest | src | ctrl | HCS(2) | information … | FCS(2) | 7E
+7E | A0 LL | dest dest | src | ctrl | HCS(2) | information … | FCS(2) | 7E
+ 0    1  2    3    4      5     6      7  8     9 … len-2      len-1 len   len+1
 ```
 
 | Element | Value / rule |
 | ------- | ------------ |
 | Flag | `0x7E` opens and closes every frame |
 | Format byte | high nibble `0xA0`; low 3 bits are the high bits of the length |
-| Frame length | `((format & 0x07) << 8) \| length_byte` |
-| Addresses | single bytes at offsets 3 (dest) and 4 (src); control at offset 5 |
-| Payload window | bytes `[8 … length-3)` — after header and HCS, before FCS and the closing flag |
-| FCS | CRC-16/CCITT, polynomial **0x8408** reflected, init `0xFFFF`, final XOR `0xFFFF` |
-| CRC coverage | from the format byte (offset 1) through `length-4`, compared little-endian against the two bytes before the closing flag |
+| Frame length | `((format & 0x07) << 8) \| length_byte`, counting **from the format byte through the FCS** — so the closing flag sits at `frame_start + 1 + length` |
+| Addresses | HDLC variable-length: a byte with bit 0 clear continues the address. This meter sends **destination `CE FF` (two bytes)** and **source `03`** (one), putting **control at offset 6** and the HCS at 7–8 |
+| HCS | same CRC as the FCS, over offsets `1 … 6` — the format byte through the control byte — little-endian at offsets 7–8 |
+| Payload window | bytes `[9 … length-1)` — after the HCS, before the FCS and the closing flag |
+| FCS | CRC-16/CCITT, polynomial **0x8408** reflected, init `0xFFFF`, final XOR `0xFFFF` (CRC-16/X-25) |
+| FCS coverage | from the format byte (offset 1) through the last information byte, i.e. offsets `1 … length-2`, little-endian at `length-1` and `length` |
+
+> **The two-byte destination is measured, not assumed.** Every offset above was
+> verified against `e450_serial8.hex` and `e450_serial16.hex`, which agree on all
+> of them, and the HCS only validates on this reading. A parser that assumes
+> single-byte addresses takes the control byte for an address, reads the
+> information field one byte early, and — because it never checks the HCS —
+> discovers none of it.
 
 Frames from this meter fit within **512 bytes**. A declared length outside
 5 … 510 means the parser is desynchronised, not that a long frame arrived.
+
+**The information field is not the application data.** It carries, in order: the
+DLMS **LLC header `E6 E7 00`** — present in the *first frame of a telegram only*,
+not in every frame — followed by a **General Block Transfer** element. Only after
+reassembling those blocks (§4.2) does a DLMS APDU appear.
 
 ### 4.1 Resynchronisation
 
@@ -144,25 +166,59 @@ an error path:
 ### 4.2 Burst and cycle model
 
 The E450 pushes a **burst of several frames** per transmission cycle, then goes
-quiet until the next cycle. A single frame is not a complete reading: the OBIS
-definitions and their values can fall in different frames of the same burst.
+quiet until the next cycle. A single frame is not a complete reading — but the
+reason is more specific than "the data is spread out": **one DLMS APDU is
+fragmented across the frames by General Block Transfer**, because the meter's
+HDLC transmit buffer is only 128 bytes (§7.6).
+
+Each frame's information field carries a GBT element:
+
+```
+E0 | block-control | block-number(2) | acknowledged-block(2) | length(BER) | payload …
+```
+
+with block control `0x40` in streaming mode, `0xC0` on the **last** block, and
+block numbers counting from 1. Concatenating the payloads in block order
+reconstructs the APDU.
 
 Consequences for any reader:
 
 1. Payloads of CRC-valid frames must be **accumulated across the burst** before
-   decoding is attempted.
-2. The cycle boundary is detectable only as **silence**. A gap of more than
-   ~2000 ms between frames marks the end of a burst — a threshold that sits well
-   clear of intra-burst frame spacing while staying far below the shortest push
-   interval (5 s). The exact value is tunable.
-3. The accumulation buffer is bounded by the longest burst; 2048 bytes has proven
+   decoding is attempted. Half an APDU decodes to nothing useful, and — worse —
+   a value split across a block boundary reads as a *shorter, valid-looking*
+   value if reassembly is skipped. `e450_serial8.hex` is the fixture for exactly
+   this: the meter serial `44337811` is split `4433` / `7811` across a block
+   boundary, and a frame-at-a-time decoder reads a truncated serial without any
+   error.
+2. **The end of a telegram is marked by the GBT last-block flag `0xC0`, not by
+   silence.** Silence is what separates one *push list* from the next: this meter
+   is configured with four of them (§6.1) on four schedules, so several telegrams
+   can arrive back to back in one cycle. A gap of more than ~2000 ms between
+   frames marks the end of a cycle — well clear of intra-telegram frame spacing
+   and far below the shortest push interval (5 s). The exact value is tunable.
+3. The accumulation buffer is bounded by the longest cycle; 2048 bytes has proven
    sufficient. This is an implementation choice.
+
+Reader behaviour that follows: reassemble on the GBT flags, publish on the
+silence.
 
 ### 4.3 Encryption
 
 The DLMS application layer supports encryption (AES-128-GCM, 16-byte key),
 enabled and keyed by the DSO. **This installation pushes plaintext telegrams** —
 decoding has been demonstrated against it with no key.
+
+**Landis+Gyr's own guidance is that it should be on.** The public *Endkunden-
+schnittstelle für die Schweiz — Standard CIP-Liste* (16 Sep 2024, §2.3) states
+that for the meter to satisfy the METAS Art. 8b data-security check and the
+privacy directive, *"muss die Verschlüsselung der CIP-Daten zwingend
+eingeschaltet werden"* — encryption must be enabled — and its reference
+configuration ships with the CII message security policy set to
+**Authenticated + Encrypted**, security suite (0) AES-GCM-128.
+
+That this installation nonetheless pushes plaintext is therefore a **deviation
+by the DSO from the vendor recommendation**, not the default. It can be changed
+without notice and without any change visible to the reader beforehand.
 
 **Whether the CII is encrypted is a DSO policy decision, and it splits by
 country.** Swiss deployments are plaintext: the EKZ-funded reference
@@ -211,48 +267,56 @@ the block algorithm below keys on.
 - **D — measurement type**: instantaneous 7, counter 8, peak-hold 6
 - **E — tariff**: total 0, tariff 1 (day) 1, tariff 2 (night) 2
 
-### 5.3 Block decode algorithm
+### 5.3 Telegram structure
 
-The burst is a sequence of **blocks**, each delimited by an occurrence of the
-meter serial. Within a block the OBIS codes are declared first and their values
-follow positionally — codes and values are not interleaved, so a single forward
-pass cannot decode a block.
+The reassembled APDU (§4.2) is a DLMS **DataNotification**, and its shape is
+declared by the meter rather than inferred:
 
-1. **Locate the meter ID** — the byte pattern `09 08` followed by 8 characters
-   from `[0-9A-Z]` (an octet-string of length 8). The first hit gives the meter
-   serial; every hit delimits a block.
-2. **Collect OBIS definitions** — scan the region *before* the meter ID for
-   `09 06 <A> <B> <C> <D> <E> FF` (octet-string of length 6, E-field terminated
-   by `0xFF`). Each definition is a slot, in declaration order. Only `A ≤ 1`
-   (abstract or electricity) is relevant to electricity readings.
-3. **Extract values** — read typed values sequentially from just after the meter
-   ID, one per slot, in declaration order. The meter-ID slot carries no numeric
-   value and is skipped.
-4. **Resolve duplicates.** A register can appear in more than one block of the
-   same burst. Taking the first occurrence and ignoring later ones is the
-   behaviour that has been validated against this meter; it is a choice, and
-   taking the last would be equally defensible if a later block ever proved
-   fresher.
+```
+0F | long-invoke-id-and-priority(4) | 0C <12-byte date-time> | 02 <N> …body…
+```
 
-A block runs until the next meter ID minus 10 bytes, or to the end of the buffer.
-A burst shorter than ~20 bytes cannot contain a complete block. Bounding slots per
-block (40 has proven sufficient) is an implementation choice.
+The body is a `structure` of N elements. **Element 0 is an `array` of N
+`structure[4]` capture-object definitions** — the push object list — and the
+remaining elements are the **values of those objects, positionally, in
+declaration order**:
 
-> **Open question — the meter serial is not always 8 characters.** The rule above
-> keys block detection on `09 08` plus exactly 8 characters, and that has been
-> validated against this installation. Published E450 captures (§8) show a
-> 16-character identifier of the form `LGZ1030653520967`. The two are not
-> necessarily in conflict — `96.1.0` and the COSEM logical device name
-> `0-0:42.0.0` are different objects and may well have different lengths — but a
-> decoder that hard-codes length 8 will find no blocks at all on a meter that
-> pushes the longer form, and will fail silently rather than loudly. Treat the
-> length as a parameter to confirm against real data, not as a constant.
+```
+02 04 | 12 <class-id:2> | 09 06 <A B C D E FF> | 0F <attribute> | 12 <data-index:2>
+```
+
+So definitions come first as a block and values follow as a block; they are not
+interleaved, and a single forward pass cannot pair them. Three of the objects
+carry non-numeric values — the push-setup object's value *is* the object list
+itself, its attribute-1 entry is a logical name, and the clock is a date-time —
+so a reader must consume a value for **every** object, not only the ones it
+wants, or every value after the first skipped object is attributed to the wrong
+register.
+
+**Duplicate registers.** A register can appear more than once in one cycle when
+several push lists fire together (§6.1). Taking the first occurrence and ignoring
+later ones is the behaviour validated against this meter; it is a choice, and
+taking the last would be equally defensible if a later telegram ever proved
+fresher.
+
+> **Resolved — the 16-character identifier is a different object.** An earlier
+> revision recorded an open question about the meter serial being 8 characters
+> here and 16 in published captures, and guessed that `96.1.0` and the COSEM
+> logical device name `0-0:42.0.0` might be different objects. Decoding
+> `e450_serial16.hex` confirms the guess: `LGZ1030655933512` is the value of
+> **`0-0:42.0.0`**, while that same telegram's **`0-0:96.1.1`** is `"1935912"` —
+> **seven** characters. So identifier length is a property of the object, and a
+> decoder that pattern-matches on an octet-string of any fixed length will find
+> nothing at all on a meter configured differently, and will fail silently
+> rather than loudly. Treat both which object carries the identity and its length
+> as parameters (FR-MTR-05), not constants.
 
 ### 5.4 Scaling and precision
 
 **The meter reports in milli-units.** Values arrive as mW, mV, mA and Wh
 integers, so every numeric value is multiplied by 0.001 to yield kW, V, A and
-kWh. The meter serial is an 8-character string and is not scaled.
+kWh. Identifiers arrive as octet strings and are not scaled; their length varies
+by object and by configuration (§5.3).
 
 Three decimal places reproduce the meter's integer resolution exactly and add no
 false precision, since the underlying value is a milli-unit count.
@@ -261,9 +325,20 @@ false precision, since the underlying value is a milli-unit count.
 
 ## 6. E450 OBIS Register Catalogue
 
-### 6.1 Meter push lists (as configured by the DSO)
+### 6.1 Meter push lists — as configured by EBL Liestal
 
 Protocols: OBIS (IEC 62056-21 / DLMS COSEM) over M-Bus EN 13757-2.
+
+**This is one DSO's parametrisation, not the meter's capability and not the
+vendor's default.** Landis+Gyr publishes a *Standard CIP-Liste für die Schweiz*
+(§7.6) of 28 objects — a 15-object Basisliste plus a 13-object Erweiterte Liste —
+and EBL's configuration below differs from it in both directions: EBL pushes
+four-quadrant reactive energy (`5.8.0`–`8.8.0`) and no voltages, where the
+standard list has two-quadrant reactive (`3.8.0`/`4.8.0`), all three voltages and
+the active-tariff register `0-0:96.14.0`. Neither is a superset of the other.
+
+A decoder must therefore tolerate registers it has never seen and the absence of
+registers it expects — both of which are ordinary, not faults.
 
 Note the four distinct push intervals — a register's update rate is set by which
 list it belongs to, so instantaneous power arrives every 5 s while tariff counters
@@ -416,6 +491,21 @@ plainly visible in a power trace. If a recording is committed to a public
 repository, substitute the serial consistently throughout, and be deliberate
 about how much consumption history goes with it.
 
+### 7.6 Vendor and DSO documentation
+
+| Source | What it settles |
+| --- | --- |
+| Landis+Gyr, *Endkundenschnittstelle für die Schweiz — Standard CIP-Liste*, 16 Sep 2024 (public) | Wired M-Bus transmission speed **2400 bps**; **HDLC transmit buffer 128 bytes**, which is why every telegram is GBT-fragmented; push transport service (5) HDLC to destination `0-2:22.0.0`; CII client application process ID 103, pre-established; message security policy **Authenticated + Encrypted**, AES-GCM-128; the 28-object standard CIP list |
+| EBL Liestal parametrisation | The four push lists and their registers, §6.1 |
+
+#### Push schedule
+
+The vendor document's reference configuration schedules Consumer Information 1
+with twelve execution times — *every minute at seconds 00, 05, 10 … 55* — i.e. a
+5 s push **aligned to the meter's wall clock**, not a free-running timer. The
+other lists are scheduled on the same object at coarser intervals, which is why
+several telegrams can coincide (§4.2).
+
 ---
 
 ## 8. Existing implementations
@@ -435,14 +525,14 @@ working code rather than trusted, and a reader need not be written from scratch.
 
 | | |
 | --- | --- |
-| Install | `idf.py add-dependency "esphome/dlms_parser^1.2.0"` — published on the Espressif Component Registry |
+| Install | `idf.py add-dependency "esphome/dlms_parser^2.1.0"` — published on the Espressif Component Registry |
 | Dependencies | none; no ESPHome, Arduino or PlatformIO required |
 | Targets | all ESP targets, plus Linux, macOS and Windows for host-side testing |
 | Transport | RAW, HDLC and M-Bus, auto-detected from the leading byte, **including multi-frame segmentation** |
 | Decoding | OBIS pattern matching, delivering code plus scaled value by callback |
 | Encryption | AES-128-GCM with a pluggable crypto backend (mbedTLS is already in ESP-IDF) |
 | Meters | names Landis+Gyr E450/E570, and carries a dedicated pattern for Landis+Gyr's swapped OBIS ordering |
-| API | `ParseResult parse(std::span<uint8_t>, const DlmsDataCallback&)` |
+| API | `DlmsParser parser(callback)` then `load_default_patterns()`, then `ParseResult parse(std::span<uint8_t>)` — the callback is a constructor argument, and the buffer is modified in place during reassembly |
 
 Multi-frame segmentation is the notable one: it is the burst-assembly problem of
 §4.2, already implemented against this meter family. The library building for
