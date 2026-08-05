@@ -13,7 +13,7 @@ not code. A change with no rule behind it is either scope creep or an
 undocumented requirement, and both need resolving before implementation.
 
 Before proposing something that reverses a settled decision, read
-[`../decisions.md`](../decisions.md) §4 — ten alternatives are recorded there with
+[`../decisions.md`](../decisions.md) §5 — ten alternatives are recorded there with
 the reason each was dropped. Several look like obvious improvements in isolation.
 
 **2. Build per the Harness.** Follow [`standards/`](standards/) and

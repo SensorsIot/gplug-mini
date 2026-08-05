@@ -1102,12 +1102,19 @@ switched off, an untrusted certificate is served. In the field the peers are the
 real ones and can only be observed; the meter cannot be asked for a malformed
 frame, and the basement cannot be asked for worse coverage.
 
-**The field tier is this large only because there is no M-Bus simulator.** Its
-scope is a consequence of that, not a fixed cost: with a simulator, decode and
-protocol cases would move to the bench and only WiFi coverage and meter power
-would remain irreproducible. That trade is recorded as rejected in
-[`decisions.md`](../decisions.md) §4 — reconsider it if the field cases prove
-expensive.
+**An M-Bus simulator now drives the bench, so the field tier is small** — see
+[`decisions.md`](../decisions.md) T7. Decode and protocol cases sit at bench,
+where the frames can be chosen and malformed ones injected. The field tier keeps
+only what a simulator cannot stand in for: the real meter's own values (AC-6) and
+24 h on meter power with cabinet WiFi (AC-7).
+
+A green bench run does not prove either of those. The simulator emits bytes we
+authored, so it can confirm the device reads what it is given and can never
+confirm the meter gives what we assumed.
+
+`other` in the table above is **not a tier.** No execution environment observes
+those properties; they are checked by CI or review, and only FR-BLD-04 and
+FR-BLD-08 carry it.
 
 The component × tier coverage matrix is **generated** — see
 `tests/coverage-matrix.md` and `tests/gaps.md`, produced from the requirement IDs

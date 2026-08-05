@@ -22,11 +22,16 @@ untrusted certificate. In the field the peers are real and can only be observed.
 So every fault-injection case belongs on the bench, and the field answers only
 what nothing else can.
 
-**The field tier is optional, and this project has one only because there is no
-M-Bus simulator.** Write one and decode and protocol cases move to the bench,
-leaving radio coverage and meter power. Field cases are the most expensive kind —
-one-shot, rarely repeatable — so that trade is worth revisiting if they start to
-hurt.
+**The field tier is optional, and this project's is small because an M-Bus
+simulator exists** (`decisions.md` T7). Decode and protocol cases sit at bench;
+the field tier keeps only radio coverage and meter power, which nothing in the
+lab reproduces. Field cases are the most expensive kind — one-shot, rarely
+repeatable — so anything that can leave the tier should.
+
+**Four tiers are execution environments: host, target, bench, field.** A test
+spec's `tier` is one of those four. `other` is **not a tier** — it is the bucket
+for properties no environment can observe, checked by CI or review, and a case
+lands there only when no device runs at all.
 
 Layer mapping: **L0** is exercised transitively and has no host tests of its own —
 empty cells there are expected, not gaps. **L1** interfaces split, with pure cores

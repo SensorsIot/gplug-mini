@@ -2,8 +2,8 @@
 
 Settled decisions for the gPlug-mini smart meter reader, from the design
 interview. The product is **gPlug-mini**; its repository is `gplug-mini`. This is the input to the FSD: everything here is decided and must not
-be re-asked. What is genuinely undecided is in §3, and alternatives that were
-considered and rejected are in §4 so they are not helpfully reintroduced later.
+be re-asked. What is genuinely undecided is in §4, and alternatives that were
+considered and rejected are in §5 so they are not helpfully reintroduced later.
 
 **Provenance** is marked on every decision. `[user]` was answered directly.
 `[derived]` was recommended and accepted without objection — still binding, but
@@ -68,12 +68,13 @@ here.
 
 | # | Decision | Gates |
 | --- | --- | --- |
-| T1 | Three tiers. **Host** (CI, no hardware): the decoder against published E450 captures. **Bench** (Embedded Workbench): provisioning, HA topics, OTA, rollback, WiFi resilience, and the decode-to-publish path via the sim build. **Cabin** (on site): physical layer, real frames, meter power, and WiFi coverage in the cabinet. `[user]` | Test layout, CI scope |
+| T1 | Four tiers, cost-ordered. **Host** (CI, no hardware): the decoder against published E450 captures. **Target** (the ESP32-C3 alone): UART configuration, NVS, GPIO, boot behaviour. **Bench** (Embedded Workbench): provisioning, HA topics, OTA, rollback, WiFi resilience, and the decode-to-publish path. **Field** (the cabin, on site): physical layer, real frames, meter power, and WiFi coverage in the cabinet. A fifth label, `other`, is **not a tier** — it is the bucket for properties no execution environment can observe, checked by CI or review (FR-BLD-04, FR-BLD-08). `[user]` | Test layout, CI scope, the `tier` field of every test spec |
 | T2 | A **compile-time** sim build (Kconfig) injects capture bytes at the UART boundary, preserving inter-chunk timing so the 2000 ms gap logic is genuinely exercised. Everything above that boundary is the identical code path. `[user]` | Build variants |
 | T3 | Compile-time and not runtime, so a shipped binary *cannot* fabricate readings. One synthetic value in HA's `total_increasing` statistics is effectively permanent. `[derived]` | Kconfig, artifact list |
 | T4 | The sim build uses a distinct discovery prefix, a marked `unique_id`, and a `-sim` version suffix, so a bench session leaves no debris in a production HA. `[derived]` | Sim build config |
-| T5 | No hardware meter simulator. The decoder is the same code whether bytes arrive from a file or a wire; what the wire adds is the physical layer, which is what the field tier confirms. `[user]` | Scope |
+| T5 | ~~No hardware meter simulator. The decoder is the same code whether bytes arrive from a file or a wire; what the wire adds is the physical layer, which is what the field tier confirms.~~ **Superseded by T7.** Kept because test results recorded before 2026-08-05 were designed under it. `[user]` | Scope |
 | T6 | After flashing the production build on the bench, confirm it boots, connects WiFi and MQTT, and reports no meter data — closing the "we tested the sim binary and shipped a different one" gap. `[derived]` | Bench checklist |
+| T7 | **An M-Bus simulator exists and is the bench's meter.** T5's premise — that the wire adds only the physical layer — was wrong: it also adds burst timing and the receive path, which no file-fed test reaches. The simulator found a receive defect the host tier cannot see (the first ~24 bytes of every burst lost) on its first day. Decode and protocol cases therefore move from field to bench; the field tier keeps only what stays irreproducible — the real meter's own values (AC-6) and 24 h on meter power with cabinet WiFi (AC-7). `[user]` | Tier of every meter-facing case, field-tier scope, T5 |
 
 ### 2.6 Build and release
 
@@ -136,7 +137,7 @@ Recorded so they are not helpfully reintroduced.
 | Gurux DLMS for ANSI C | Built around a client that establishes an association and requests objects. This interface only pushes, so most of the library is unreachable and its framing is entangled with request/response |
 | Falling back to AP mode when WiFi drops | Protects against a failure that happens once, at setup, while creating one that recurs forever, unattended, in a basement — see C4 |
 | Auto-polling for new releases | Delivers a bad build to every device before anyone notices |
-| A second ESP32 as a hardware meter simulator | Apparatus built to test a path the host tier already covers. Reconsider only if real frames turn out to differ from the published captures — at which point there would be real bytes to replay |
+| ~~A second ESP32 as a hardware meter simulator~~ **— no longer rejected; built, see T7** | The stated reason was "apparatus built to test a path the host tier already covers". It does not: the host tier feeds the decoder from a file, which exercises neither burst timing nor the UART receive path. The simulator's first day exposed a defect in exactly that gap |
 | Flash encryption / encrypted NVS | Irreversible eFuse burning and materially harder development flashing, to protect a WiFi password from someone already inside the meter cabinet |
 | An open provisioning AP | Rejected in favour of WPA2 — see C6 |
 | A merged factory image artifact | The workbench flashes from parts at offsets; nothing would consume it |

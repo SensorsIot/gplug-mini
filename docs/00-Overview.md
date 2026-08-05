@@ -46,7 +46,7 @@ seconds to reconfigure"* is UserDocumentation.
 
 ## The document that is not a plane
 
-[`decisions.md`](decisions.md) records what was settled and why, including §4's
+[`decisions.md`](decisions.md) records what was settled and why, including §5's
 list of considered-and-rejected alternatives. Consult it before proposing a change
 that reverses one — several of those alternatives look like obvious improvements
 in isolation, which is exactly why the reasons are written down.
