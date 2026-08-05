@@ -53,4 +53,15 @@ constexpr size_t ap_passphrase(const uint8_t mac[6], char* out, size_t cap) {
   return static_cast<size_t>(n);
 }
 
+#ifndef GPLUG_HOST_TEST
+// Runs Provisioning to completion: SoftAP up, page served, DNS redirected.
+// Returns true when a configuration was submitted and stored, false when the
+// timeout expired with nothing submitted — in which case whatever was already
+// stored is untouched (FR-PRV-06).
+//
+// Blocking on purpose. Provisioning is not a background activity: nothing else
+// the device does is meaningful until it knows which network to join.
+bool provisioning_run();
+#endif
+
 }  // namespace gplug

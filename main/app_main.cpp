@@ -15,6 +15,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "config.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "framing.h"
 #include "ha_discovery.h"
@@ -23,6 +24,7 @@
 #include "meter_source.h"
 #include "net.h"
 #include "obis_map.h"
+#include "provisioning.h"
 #include "sdkconfig.h"
 
 #include "dlms_parser/dlms_parser.h"
@@ -187,6 +189,28 @@ extern "C" void app_main() {
   // (FR-NVS-02).
   ESP_ERROR_CHECK(gplug::config_storage_init());
   const gplug::Config conf = gplug::config_effective();
+
+  // Provisioning only when there is nothing usable to try — neither stored nor
+  // built in (FR-NVS-02). A bench build carries Kconfig credentials, so it
+  // never lands here; a production build ships with them empty, so it always
+  // does on first boot.
+  //
+  // Never on a WiFi failure. A device in a meter cabinet that answers an outage
+  // by raising a portal nobody can see has made itself unreachable rather than
+  // recoverable (FR-SUP-04, D-C4).
+  if (!gplug::config_usable(conf)) {
+    ESP_LOGW(TAG, "no usable configuration (%s) — entering Provisioning",
+             gplug::describe(gplug::config_fault(conf)));
+    if (gplug::provisioning_run()) {
+      ESP_LOGI(TAG, "configuration stored — restarting to use it");
+    } else {
+      // Nothing was submitted and nothing was stored, so there is still nothing
+      // to try. Restarting re-raises the portal rather than proceeding to fail
+      // at association forever with credentials the device does not have.
+      ESP_LOGW(TAG, "Provisioning timed out with no submission — restarting");
+    }
+    esp_restart();
+  }
 
   gplug::wifi_start_and_wait(conf);
   gplug::mqtt_start(conf);
