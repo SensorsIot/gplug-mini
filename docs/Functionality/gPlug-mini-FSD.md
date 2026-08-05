@@ -2,22 +2,28 @@
 
 ```yaml
 document_status:            draft
-fsd_version:                0.1.0
+fsd_version:                0.2.0
 repository:                 gplug-mini
-baseline_commit:            (none — repository not yet created)
-applicable_firmware_version: (none — pre-implementation)
+baseline_commit:            1b4db45
+applicable_firmware_version: 0.0.0-4f44d6b (bench)
 author:                     SensorsIot
 reviewers:                  —
 approval_status:            pending review
 created:                    2026-08-03
-last_updated:               2026-08-03
+last_updated:               2026-08-05
 change_history:
   - 0.1.0 · 2026-08-03 · initial specification from decisions.md and
     MBUS-E450-Interface-Spec.md
-superseded_requirements:    none
+  - 0.2.0 · 2026-08-05 · verification contracts merged into the requirement
+    tables; tier moved out of the FSD onto tests; requirements redistributed to
+    the components that own them; two build-restating requirements removed
+superseded_requirements:
+  - FR-MTR-09 · split; the identity half became FR-MTR-10
+  - FR-CFG-01..04, FR-ERR-01..04, NFR-NET-03 · moved to their owning components
+  - NFR-NET-01, NFR-NET-02, FR-DEC-01, FR-DEC-02 · removed, restated elsewhere
 open_decisions:
   - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
-related_test_baseline:      (none yet)
+related_test_baseline:      testing/test-plan.yaml
 ```
 
 Requirement provenance is tagged `[user]`, `[derived]`, `[pack:esp32]`.
@@ -788,6 +794,34 @@ Which tests cover these requirements, and what each produced, is in
 
 ### 18.2 Requirements
 
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-SEC-01** | Must | The device shall verify the TLS certificate chain for firmware downloads against an embedded certificate authority. | Serve an image with a self-signed certificate | Rejected, image not written | The image is accepted | `[user]` D-U5 |
+| **FR-SEC-02** | Must | The device shall reject a firmware download whose certificate does not validate. | Serve an image with an expired certificate | Rejected, image not written | The image is accepted | `[user]` D-U5 |
+| **FR-SEC-03** | Must | The provisioning access point shall require a WPA2 passphrase. | Scan for the SoftAP while Provisioning is active | The network advertises WPA2 | An open network is advertised | `[user]` D-C6 |
+| **FR-SEC-04** | Must | The device shall not expose stored passphrases through any network interface. | Request every portal endpoint after provisioning | No passphrase in any response body | A passphrase echoed in a form field | `[derived]` |
+| **NFR-SEC-01** | Must | Configuration is stored unencrypted; confidentiality against an attacker with physical flash access is **not claimed**. | Dump the flash of a provisioned device | The WiFi passphrase is readable in plaintext | Encryption present but undocumented | `[user]` D-C2 |
+
+NFR-SEC-01 is deliberately a non-claim rather than a requirement. Writing
+"credentials shall be protected at rest" when they are stored in plaintext would
+produce an acceptance criterion that cannot fail — the defect §6.5.1 exists to
+prevent. The accepted risk is recorded in §4. Its contract is inverted for the
+same reason: it fails if someone quietly *adds* encryption, because that would
+make the documented position false.
+
+The asymmetry across these requirements is intentional. Plaintext NVS and a
+short-lived provisioning window cost a credential in a scenario that requires
+physical presence. A firmware download without certificate validation costs
+arbitrary code execution to anyone on the path, permanently. Only the second
+justifies its implementation cost.
+
+### 18.3 Tests
+
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
+
+### 18.2 Requirements
+
 ---
 
 ## 19. Degraded Operation
@@ -891,9 +925,10 @@ confirm the meter gives what we assumed.
 those properties; they are checked by CI or review, and only FR-BLD-04 and
 FR-BLD-08 carry it.
 
-The component × tier coverage matrix is **generated** — see
-`tests/coverage-matrix.md` and `tests/gaps.md`, produced from the requirement IDs
-in these chapters and the test specifications. It is not maintained here.
+Which tests cover which requirement, at which tier, with what equipment and what
+each produced, is in [`testing/test-plan.yaml`](../../testing/test-plan.yaml).
+Nothing about coverage is maintained here — a hand-kept column is stale the
+moment a test changes.
 
 ### 22.1 Acceptance scenarios
 
@@ -913,22 +948,23 @@ necessity, and both are why Phase 3 exists as a phase rather than a formality.
 
 ### 22.2 Traceability
 
-Traceability is **generated**, never hand-maintained here. Each requirement in
-this document carries a stable ID; test specifications cite those IDs; the
-traceability tool crosses requirement → component → tier with test linkage to
-produce the coverage matrix and the gap report.
+Traceability is the join between the stable IDs in this document and the tests
+in [`testing/test-plan.yaml`](../../testing/test-plan.yaml), which reference them
+and never restate them.
 
-Seven lifecycle states are tracked per requirement, and none is collapsed into a
-single "covered" flag:
+A **test** is `not done`, `successful` or `failed`, and those fields are written
+by whatever ran it, never by hand. `not done` carries its reason, and the two
+reasons are different in kind: *not written yet* is a backlog item, *needs a
+capability that is unavailable* is not, and no amount of writing fixes it.
 
-```
-Specified → Test designed → Implementation mapped → Executable test implemented
-          → Test executed → Evidence captured → Requirement verified
-```
+A **requirement** is met when every test that verifies it is successful —
+including the check that its *must not* did not happen. A passing test that never
+looked for the prohibited outcome establishes less than it appears to.
 
-At this revision **every requirement is at `Specified`**. No test is designed, no
-code exists, and nothing is verified. That is the expected state of a
-pre-implementation FSD and is recorded rather than left to be inferred.
+At revision 0.2.0: **86 requirements, 59 carrying a contract, 10 tests
+implemented and passing, all at host tier.** No target or bench test exists yet,
+so nothing that depends on a wire or a peer is verified — including the meter
+interface, which is where the device is currently known to be failing.
 
 ---
 

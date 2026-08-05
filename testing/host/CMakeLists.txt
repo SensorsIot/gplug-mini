@@ -3,7 +3,7 @@
 #   cmake -S testing/host -B build/host && cmake --build build/host
 #   ctest --test-dir build/host --output-on-failure
 #
-# dlms_parser is fetched at the same version the firmware pins (FR-DEC-01), so a
+# dlms_parser is fetched at the same version main/idf_component.yml pins, so a
 # host run and a device run exercise the same decoder. Pinned to a tag, not a
 # branch: these tests exist to notice when the library's behaviour changes, which
 # they cannot do if the library moves underneath them.

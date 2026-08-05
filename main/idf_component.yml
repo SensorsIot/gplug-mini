@@ -1,5 +1,5 @@
 ## Managed dependencies. dependencies.lock is committed, managed_components/ is
-## not — FR-DEC-02 requires the resolved version to be pinned in the repository.
+## not — the resolved version is pinned in the repository (conventions.md).
 dependencies:
   idf: ">=6.0"
   esphome/dlms_parser: "^2.1.0"
