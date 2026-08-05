@@ -988,6 +988,18 @@ tests:
   commit:
   when:
 
+- id: TS-102
+  verifies: [FR-NVS-02]
+  tier:     host
+  needs:    []
+  does:      Judges every malformed stored record the flash can hand back - empty, overlong, no scheme, bad hostname
+  expected:  Each is refused and named; a complete record and an open network are accepted
+  procedure: ctest -R TS-102
+  status:    successful
+  reason:
+  commit:    082c610
+  when:      2026-08-05T17:50Z
+
 - id: TS-077
   verifies: [FR-NVS-01]
   tier:     target

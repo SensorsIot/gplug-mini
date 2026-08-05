@@ -10,6 +10,7 @@
 #include <string>
 
 #include "aggregator.h"
+#include "config.h"
 #include "ha_discovery.h"
 #include "obis_map.h"
 
@@ -169,6 +170,74 @@ void empty_set_not_published() {
         "a real zero reading is published — only the absence of values is suppressed");
 }
 
+// TS-102 — FR-NVS-02. A stored configuration that cannot be used is detected
+// and named, so the device enters Provisioning instead of attempting a
+// connection that cannot succeed.
+//
+// The target-tier test corrupts a partition and reboots, which proves the
+// device survives it. This proves the thing that decides — and it can cover
+// every malformed record the flash might hand back, which reflashing cannot.
+void config_validity() {
+  using gplug::Config;
+  using gplug::ConfigFault;
+  using gplug::config_fault;
+  using gplug::config_usable;
+
+  Config good{};
+  std::strcpy(good.ssid, "gplug-bench");
+  std::strcpy(good.passphrase, "benchtest123");
+  std::strcpy(good.broker, "mqtt://10.42.0.1:1883");
+  check(config_usable(good), "a complete record is usable");
+
+  // An erased namespace reads back as zeros, which is first boot rather than
+  // corruption. The device must tell those apart: one is normal and one is not.
+  Config blank{};
+  check(config_fault(blank) == ConfigFault::NoSsid, "an empty record reports a missing SSID");
+
+  // An open network has no passphrase. Requiring one would make a valid
+  // deployment unconfigurable, and the failure would look like bad credentials.
+  Config open_net = good;
+  open_net.passphrase[0] = '\0';
+  check(config_usable(open_net), "an open network needs no passphrase");
+
+  // A bare address is the mistake a person makes at a portal, and it fails far
+  // from its cause: the MQTT client reports a connect error, not a bad URI.
+  Config bare = good;
+  std::strcpy(bare.broker, "10.42.0.1");
+  check(config_fault(bare) == ConfigFault::BrokerMalformed,
+        "a broker address without a scheme is rejected here, not at connect time");
+
+  Config no_broker = good;
+  no_broker.broker[0] = '\0';
+  check(config_fault(no_broker) == ConfigFault::NoBroker, "a missing broker is reported");
+
+  // Length limits are the protocol's. A longer value did not come from our
+  // portal, so the record is corrupt rather than merely wrong.
+  Config long_ssid = good;
+  std::memset(long_ssid.ssid, 'a', gplug::SSID_MAX + 1);
+  long_ssid.ssid[gplug::SSID_MAX + 1] = '\0';
+  check(config_fault(long_ssid) == ConfigFault::SsidTooLong,
+        "an SSID longer than 802.11 permits is a corrupt record");
+
+  // Boundary either side, because a limit tested only well inside its range
+  // passes with the comparison inverted.
+  Config max_ssid = good;
+  std::memset(max_ssid.ssid, 'a', gplug::SSID_MAX);
+  max_ssid.ssid[gplug::SSID_MAX] = '\0';
+  check(config_usable(max_ssid), "an SSID of exactly 32 octets is valid");
+
+  for (const char* bad : { "-leading", "trailing-", "has space", "under_score" }) {
+    Config h = good;
+    std::strcpy(h.hostname, bad);
+    check(config_fault(h) == ConfigFault::HostnameInvalid, bad);
+  }
+  Config h = good;
+  std::strcpy(h.hostname, "gplug-01");
+  check(config_usable(h), "a valid DNS label is accepted");
+
+  printf("       empty record reports: %s\n", gplug::describe(config_fault(blank)));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -182,6 +251,7 @@ int main(int argc, char** argv) {
   else if (name == "oneset") one_publish_per_cycle();
   else if (name == "firstwins") first_occurrence_retained();
   else if (name == "emptyset") empty_set_not_published();
+  else if (name == "config")   config_validity();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

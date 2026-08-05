@@ -28,6 +28,11 @@ from workbench_driver import WorkbenchDriver  # noqa: E402
 DUT = "SLOT1"
 SIM = "SLOT3"
 
+# Poll length for accumulating serial output. Below about two seconds the portal
+# closes the connection mid-request, which surfaces as a failure in whichever
+# test is polling rather than as the transport problem it is.
+POLL_SECONDS = 3
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -81,9 +86,21 @@ class Dut:
         """
         deadline = time.monotonic() + seconds
         seen, out = set(), []
+        misses = 0
         while time.monotonic() < deadline:
-            remaining = max(1, int(deadline - time.monotonic()))
-            result = self.wb.serial_monitor(DUT, timeout=min(5, remaining))
+            try:
+                result = self.wb.serial_monitor(DUT, timeout=POLL_SECONDS)
+            except Exception as e:
+                # A dropped HTTP connection is not a result about the device.
+                # Retrying keeps a transport hiccup from being recorded as a
+                # firmware failure; giving up after several says the bench is
+                # unreachable, which is a different problem and reads as one.
+                misses += 1
+                if misses > 3:
+                    pytest.fail(f"the workbench stopped answering after {misses} tries: {e}")
+                time.sleep(1)
+                continue
+            misses = 0
             for line in result.get("output") or []:
                 if line not in seen:
                     seen.add(line)
