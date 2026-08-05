@@ -29,8 +29,13 @@ pytestmark = pytest.mark.breadandbutter
 
 
 @pytest.mark.fast
-def test_a_telegram_decodes(dut, sim):
-    """The first link in the chain: bytes on the wire become values.
+def test_ts108_the_normal_signal_decodes(dut, sim):
+    """TS-108 — FR-MTR-09. The first link: bytes on the wire become labelled values.
+
+    Step 4 of the journey, and it needs its own ID rather than riding on a
+    neighbouring test — FR-MTR-09 was proven only at host tier against a fixture,
+    so until this runs the register mapping has never been shown to hold on
+    hardware.
 
     Asserted over several cycles and requiring one good one — the rig delivers a
     clean burst roughly half the time, so a single-cycle assertion here is flaky
@@ -50,8 +55,8 @@ def test_a_telegram_decodes(dut, sim):
 
 
 @pytest.mark.fast
-def test_the_meter_identity_is_read(dut, sim):
-    """The second link, and the one that gates everything downstream.
+def test_ts109_the_meter_identity_is_read(dut, sim):
+    """TS-109 — FR-MTR-10. The second link, and the one that gates everything.
 
     Home Assistant discovery waits on the meter serial (FR-HA-03), so a device
     that never reads it connects, decodes, and publishes nothing — while every
@@ -77,8 +82,8 @@ def test_the_meter_identity_is_read(dut, sim):
 
 
 @pytest.mark.slow
-def test_a_measurement_reaches_the_broker(dut, broker, sim):
-    """The whole chain, observed at the end of it.
+def test_ts110_a_measurement_reaches_the_broker(dut, broker, sim):
+    """TS-110 — FR-AGG-03, FR-AGG-06. Step 5: the whole chain, observed at the end.
 
     The device's own log is not enough here. It reports what it handed to the
     MQTT client, not what the broker received, and the gap between those two is
@@ -131,8 +136,8 @@ def test_a_measurement_reaches_the_broker(dut, broker, sim):
 
 
 @pytest.mark.slow
-def test_home_assistant_discovery_is_published(dut, broker, sim):
-    """The last link: entities exist, keyed on the meter rather than the device.
+def test_ts111_discovery_is_published(dut, broker, sim):
+    """TS-111 — FR-HA-02, FR-HA-04. Entities exist, keyed on the meter.
 
     Retained, so a subscriber arriving later still learns the entities. That is
     what makes this observable at all — the configs were published once, when the

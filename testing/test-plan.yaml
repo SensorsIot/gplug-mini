@@ -490,6 +490,70 @@ tests:
   commit:    9f359b1
   when:      2026-08-05T17:20Z
 
+# ─────────────────────────────────────────────────────────────────────────
+# Bread-and-butter — the device does its job
+#
+# One journey, five checkpoints, each asserted separately because they fail for
+# different reasons and the difference says where to look. These run before
+# every deviation and exception case: a device that is not delivering
+# measurements cannot tell you anything useful about how it handles a corrupted
+# frame.
+#
+# Steps 1-3 are discharged by the provisioning tests (TS-053..061, TS-031,
+# TS-039). Steps 4 and 5 are these.
+#
+# They exist because twelve requirements about the working path were proven only
+# at host tier, against a fixture, and had never been shown to hold on hardware.
+# ─────────────────────────────────────────────────────────────────────────
+
+- id: TS-108
+  verifies: [FR-MTR-09]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several cycles
+  expected:  At least one cycle decodes, and each value carries the label and unit its register maps to
+  procedure: P-METER
+  status:    not done
+  reason:    written; awaiting a run
+  commit:
+  when:
+
+- id: TS-109
+  verifies: [FR-MTR-10]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      The same signal, with the simulator emitting an identity; watched for the meter serial
+  expected:  The serial is read and reported - discovery is gated on it and publishes nothing without it
+  procedure: P-METER
+  status:    not done
+  reason:    written; awaiting a run
+  commit:
+  when:
+
+- id: TS-110
+  verifies: [FR-AGG-03, FR-AGG-06]
+  tier:     bench
+  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
+  does:      Subscribes to the state topic at the broker and waits for live messages
+  expected:  At least two arrive; each is one complete non-empty JSON object, one per cycle
+  procedure: P-NETWORK
+  status:    not done
+  reason:    written; awaiting a run
+  commit:
+  when:
+
+- id: TS-111
+  verifies: [FR-HA-02, FR-HA-04]
+  tier:     bench
+  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
+  does:      Reads the retained discovery configs from the broker
+  expected:  At least one config is retained and carries a unique_id keyed on the meter serial
+  procedure: P-NETWORK
+  status:    not done
+  reason:    written; awaiting a run
+  commit:
+  when:
+
 - id: TS-030
   verifies: [FR-SUP-01]
   tier:     target
