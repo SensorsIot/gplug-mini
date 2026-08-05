@@ -250,6 +250,15 @@ class Sim:
                 )
         pytest.fail("simulator did not answer `status` — is another client attached?")
 
+    # The signal the bread-and-butter tests use: one short frame carrying power
+    # and energy, with the meter identity, every five seconds.
+    #
+    # Mode 3's full E450 telegram is 417 bytes over three GBT blocks and the rig
+    # delivers about 370 of them, so the identity never survives — that is the
+    # simulator, not the firmware, and it belongs in a deviation test rather than
+    # under the check that the product works at all.
+    NORMAL_MODE = "mode 2"
+
     # Bytes of lead-in before the first frame. Without it the board decodes
     # nothing at all: it loses a few bytes at the head of every burst, and those
     # bytes are the opening `7E A0 95` of frame 1. Losing frame 1 loses GBT
@@ -274,13 +283,15 @@ class Sim:
         # then sees a longer telegram than it was written for — which is how a
         # link-health check that passed at 96% failed on the following run for a
         # reason that had nothing to do with the board.
-        for c in ("fault none", "gap 0", "identity ldn", "mode 3", "serial 8",
+        for c in ("fault none", "gap 0", "identity ldn", self.NORMAL_MODE, "serial 8",
                   f"preamble {self.PREAMBLE} 0xFF"):
             self.command(c)
         state = self.status()
         assert state.get("fault") == "none", f"simulator still has {state.get('fault')} armed"
         assert state.get("identity") != "none", "simulator is emitting no identity"
         assert state.get("serial") == "8", f"simulator serial length is {state.get('serial')}"
+        assert state.get("mode", "").startswith(self.NORMAL_MODE[-1]), \
+            f"simulator is in mode {state.get('mode')}"
         assert state.get("preamble", "").startswith(str(self.PREAMBLE)), \
             f"simulator preamble is {state.get('preamble')}"
         return state

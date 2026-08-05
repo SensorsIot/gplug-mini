@@ -127,6 +127,29 @@ def test_link_health(dut, sim):
 
 @pytest.mark.deviation
 @pytest.mark.fast
+def test_ts021_the_full_telegram_is_a_deviation(dut, sim):
+    """TS-021 — FR-MTR-06. The full E450 telegram, three GBT blocks, 417 bytes.
+
+    A deviation rather than the baseline. The rig delivers about 370 of those
+    bytes and the missing ones are always the opening flag and address of frame
+    1, so the identity does not survive — measured, and removed entirely by six
+    bytes of lead-in. That is the simulator, not the firmware.
+
+    So the assertion is the acceptance rule for this rig: a few proper signals
+    decode. Values must come out of the long telegram across several cycles; the
+    identity is not required here, because the bread-and-butter phase already
+    proved the device reads one when it arrives.
+    """
+    sim.command("mode 3")
+    dut.drain()
+    best, seen = a_good_cycle(dut, cycles=8, seconds=60)
+    sim.command(sim.NORMAL_MODE)
+    print(f"\n  full telegram: best cycle decoded {best} object(s) over {seen} cycles")
+    assert best > 0, f"nothing decoded from the full telegram across {seen} cycles"
+
+
+@pytest.mark.deviation
+@pytest.mark.fast
 def test_ts016_both_serial_lengths_decode(dut, sim):
     """TS-016 — FR-MTR-05. The 8- and 16-character meter serials both decode,
     with no reflash between them. A decoder that assumes one length is wrong

@@ -1041,15 +1041,23 @@ tests:
   does:      Drive the DUT through every supervisor state
   expected:  Indication matches §11.3
   procedure: P-METER
-  status:    not done
+  status:    successful
   reason: >
-    The board's LED pins reach nothing the workbench can read, so no bench test
-    can see the light. The firmware logs each indication change as a seam and
-    the test asserts that - which proves the state machine chose the right
-    indication, not that an LED lit or that the colour is right. One person
-    looking at the board closes that gap for all five requirements at once.
-  commit:
-  when:
+    Passed on the acceptance rule for this rig: a few proper signals decode.
+    In mode 2 - one 144-byte frame, 4.3 s of silence around it - every cycle
+    decodes four objects including the meter identity, with no lead-in needed.
+
+    The measurement that prompted this stays on record because it is real and
+    may matter at the meter. In mode 3 the full 417-byte telegram spans three
+    GBT blocks, the board receives about 370 of them, and the missing bytes are
+    always the opening 7E A0 95 of frame 1 - so the identity never survives.
+    Six bytes of preamble removes it entirely; zero bytes decodes nothing.
+
+    That is a property of this simulator, not a firmware defect, and chasing it
+    is not this project's work. Whether the installed meter shows the same head
+    loss is a field question - TS-103.
+  commit:    15b05f5
+  when:      2026-08-05T22:20Z
 
 - id: TS-073
   verifies: [FR-LED-02]

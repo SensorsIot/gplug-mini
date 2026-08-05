@@ -64,6 +64,12 @@ at host and wire behaviour at target or bench. **L2** is host throughout.
   over several that assert shape.
 - **Never tune a threshold to make a test pass.** A failing test is evidence until
   proven otherwise; find the defect first.
+- **A bench pass is a few proper signals decoded, not every one.** The M-Bus
+  simulator is not a meter and does not pretend to be: it drops bytes, and
+  chasing that is not this project's work. Assert across several cycles and
+  require one good one. What the rig loses is recorded against the *capability*,
+  never against the firmware — a rig characteristic filed as a defect sends the
+  next person hunting code that is doing nothing wrong.
 - **Assert the prohibited outcome, not just the happy one.** The FSD's verification
   contracts carry a *Must NOT happen* column for a reason: a rollback test that
   only checks "did it recover" passes when the device recovers by rebooting, which
