@@ -33,7 +33,7 @@ const ObisEntry* obis_lookup(const char* obis);
 
 // True for the two codes an E450 may carry its identity under. One published
 // configuration uses the COSEM logical device name, the other device ID 1, and a
-// decoder that knows only one finds nothing on the other meter (FR-MTR-09).
+// decoder that knows only one finds nothing on the other meter (FR-MTR-10).
 bool obis_is_identity(const char* obis);
 
 }  // namespace gplug

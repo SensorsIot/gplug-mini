@@ -486,19 +486,19 @@ level shifter. Traffic is one-way.
 
 ### 7.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-MTR-01** | Must | The device shall configure the meter UART as 2400 baud, 8 data bits, even parity, 1 stop bit. | `[user]` interface spec §2.2 |
-| **FR-MTR-02** | Must | The device shall invert the UART receive signal. | `[user]` interface spec §2.2 |
-| **FR-MTR-03** | Must | The device shall disable both internal pull-up and pull-down on the meter UART receive pin. | `[user]` interface spec §2.2 |
-| **FR-MTR-04** | Must | The device shall never transmit on the meter link. | `[user]` interface spec §1 |
-| **FR-MTR-05** | Must | The meter serial length used for block detection shall be a configurable parameter, not a compiled-in constant. | `[code]` published captures |
-| **FR-MTR-09** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | `[code]` published captures |
-| **FR-MTR-06** | Must | The device shall recover frame alignment without external assistance when reception begins mid-burst. | `[derived]` interface spec §4.1 |
-| **FR-MTR-07** | Must | The device shall discard any frame whose CRC does not validate. | `[user]` interface spec §4.1 |
-| **FR-MTR-08** | Must | The device shall not forward any part of a CRC-invalid frame to the decoder. | `[derived]` |
-| **FR-MTR-09** | Must | The device shall map decoded OBIS codes to the measurement labels of Appendix B. | `[derived]` D-H2 |
-| **NFR-MTR-01** | Must | The receive path shall accommodate a complete burst rather than a single frame. | `[derived]` interface spec §2.2 |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-MTR-01** | Must | The device shall configure the meter UART as 2400 baud, 8 data bits, even parity, 1 stop bit. | Fresh boot; inspect the UART configuration | Configured 2400 8E1 | Any other framing | `[user]` interface spec §2.2 |
+| **FR-MTR-02** | Must | The device shall invert the UART receive signal. | Drive the line with a known pattern | Pattern received intact | Bytes received with framing errors | `[user]` interface spec §2.2 |
+| **FR-MTR-03** | Must | The device shall disable both internal pull-up and pull-down on the meter UART receive pin. | Inspect the pad configuration after boot | Both disabled | Either enabled | `[user]` interface spec §2.2 |
+| **FR-MTR-04** | Must | The device shall never transmit on the meter link. | Monitor the meter link for 10 min in every state, including Provisioning and OTA | No transmitted edge observed | Any transmission, including during boot | `[user]` interface spec §1 |
+| **FR-MTR-05** | Must | The meter serial length used for block detection shall be a configurable parameter, not a compiled-in constant. | Decode a capture whose serial is 8 chars, then one with 16 | Both decode with the parameter set accordingly | Rebuild required to change length | `[code]` published captures |
+| **FR-MTR-06** | Must | The device shall recover frame alignment without external assistance when reception begins mid-burst, at a cost of no more than the cycle in progress. | Begin feeding from a byte offset inside a frame, then feed one complete cycle | Values decode from the partial cycle; the next complete cycle yields a full set including the identity | Recovery never happens, or every later cycle is also incomplete | `[derived]` interface spec §4.1 |
+| **FR-MTR-07** | Must | The device shall discard any frame whose CRC does not validate. | Feed a capture with one corrupted CRC byte | That frame contributes nothing | Its values appear in the set | `[user]` interface spec §4.1 |
+| **FR-MTR-08** | Must | The device shall not forward any part of a CRC-invalid frame to the decoder. | The same stimulus, observed at the decoder input | The decoder never receives those bytes | Any part of the frame forwarded | `[derived]` |
+| **FR-MTR-09** | Must | The device shall map decoded OBIS codes to the measurement labels of Appendix B. | Feed a published capture | Every register maps to the right label, unit and scale | A value mapped to the wrong label | `[derived]` D-H2 |
+| **FR-MTR-10** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | Feed a capture carrying each object, then one carrying neither | Identity read from whichever is present; with neither, discovery defers | The wrong object preferred when both are present | `[code]` published captures |
+| **NFR-MTR-01** | Must | The receive path shall buffer at least 512 bytes of a single burst without loss. | Feed a 491-byte telegram, the longest measured in the reference captures | No byte dropped | Any byte dropped | `[proposed]` interface spec §2.2 |
 
 FR-MTR-04 is a safety property, not a convenience: the customer interface is a
 metrologically sealed device, and transmitting on it is outside what a consumer
@@ -519,16 +519,11 @@ framing, OBIS-addressed. Full detail in interface spec §4 and §5; not restated
 | Burst exceeds the buffer | Excess dropped, condition logged; the partial set is still decoded |
 | Decoder finds no blocks | Distinct logged condition — the signature of a wrong serial length (FR-ERR-03) |
 
-### 7.5 Verification contracts
+### 7.5 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-MTR-01..03 | Fresh boot; inspect UART configuration and drive the line with a known pattern | Configured 2400 8E1 inverted, pulls disabled; pattern received intact | Bytes received with framing errors | target |
-| FR-MTR-04 | Monitor the meter link for 10 min in every state, including Provisioning and OTA | No transmitted edge observed | Any transmission, including during boot | bench |
-| FR-MTR-05 | Decode a capture whose serial is 8 chars, then one with 16 | Both decode with the parameter set accordingly | Rebuild required to change length | host |
-| FR-MTR-06 | Begin feeding a capture from a byte offset inside a frame | Alignment recovered; subsequent frames decode | Parser never recovers | host |
-| FR-MTR-07/08 | Feed a capture with one corrupted CRC byte | That frame contributes nothing | Corrupted values appear in the set | host |
-| FR-MTR-09 | Feed a published capture | Every register in Appendix B maps to the right label, unit and scale | A value mapped to the wrong label | host |
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml). Tier lives in
+the test's own name; the plan references the IDs above and never restates them.
 
 ---
 
@@ -995,7 +990,7 @@ justifies its implementation cost.
 | **FR-ERR-03** | Must | The device shall log a distinct condition when a burst is received but no block is found. | `[code]` published captures |
 | **FR-ERR-04** | Must | The device shall not reset as a response to any network, broker or meter fault. | `[derived]` D-C4 |
 
-**FR-MTR-09 exists because the identity moves.** The two published
+**FR-MTR-10 exists because the identity moves.** The two published
 configurations do not merely differ in length: one publishes the serial as the
 COSEM logical device name and the other as device ID 1. A decoder reading a
 single OBIS code finds nothing on the other configuration, and finding nothing
