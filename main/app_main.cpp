@@ -222,10 +222,6 @@ extern "C" void app_main() {
   gplug::indicator_start();   // runs the BOOT sequence, then follows the state
   gplug::indicate(gplug::Indication::Connecting);
 
-  // FR-WDT-01/02. Subscribed after the LEDs so a board that cannot configure
-  // GPIO fails visibly rather than by resetting every five seconds, which looks
-  // like a watchdog defect and is not one.
-  watchdog_start();
 
   // Storage first, then the configuration, then the network that depends on it.
   // A device that cannot open its storage still runs on build defaults rather
@@ -266,6 +262,16 @@ extern "C" void app_main() {
   parser.load_default_patterns();
 
   gplug::meter_source_start();
+
+  // FR-WDT-01/02, and not one line earlier. Everything above this point can
+  // legitimately block for longer than the watchdog period: joining WiFi
+  // retries for as long as it takes and a broker session may never arrive, both
+  // by design (FR-SUP-04, FR-WDT-05). Subscribing before them makes the
+  // watchdog reset a device that is doing exactly what it was told to.
+  //
+  // Measured: subscribing before wifi_start_and_wait fired the watchdog 5.5 s
+  // into every boot.
+  watchdog_start();
 
   std::vector<uint8_t> cycle;
   cycle.reserve(MAX_CYCLE);
