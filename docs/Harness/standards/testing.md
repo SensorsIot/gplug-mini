@@ -59,6 +59,20 @@ property worth watching rather than an accident.
 | **negative** | A fault or malfunction is injected | Corrupted checksum, stopped broker, cut power |
 | **security** | Derived from the threat profile, not from a feature | An untrusted certificate aborts the download |
 
+**Bring-up comes before the journey where hardware is unproven.** A test that
+asks "is this connected the way we think?" — polarity, parity, a pin actually
+wired — is cheaper than inferring the same fact from a journey that fails five
+steps later. TS-022 drives a continuous `0x55` for exactly this: it alternates
+every bit, so an inverted line yields a uniform `0xD5` rather than noise that
+looks like data. Bring-up tests are `standard` in kind, not a fifth bin; they are
+simply the first standard tests to run.
+
+**All host tests run, always, in full.** They cost milliseconds, so there is
+nothing to gain by selecting among them and something to lose — a subset that
+skips the one failure that mattered. Ordering and gating are disciplines for runs
+that cost minutes. Run the whole host suite before every bench session and treat
+a red one as a reason not to start.
+
 **Build them in that order, and keep the volume tilted towards the first two.**
 Write the standard case first even when it feels too obvious to write down, then
 the variations, and only then the negatives that matter most.
