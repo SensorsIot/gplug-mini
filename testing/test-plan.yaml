@@ -1,0 +1,283 @@
+# gPlug-mini — the single source of truth for testing
+#
+# What must be proved lives in the FSD; this file says how it will be proved,
+# with what equipment, and what happened last time. Requirements are referenced
+# by ID and never restated — docs/Functionality/gPlug-mini-FSD.md is the
+# authority on what the device must do.
+#
+# `tier` is a field, not part of the id. A test can move tier — a check that
+# needs a firmware seam may only be possible on the device — and ids are stable,
+# so encoding a mutable fact in an immutable name would force a choice between
+# renaming a stable id and keeping one that lies. The id's prefix stays as a
+# convention; the generator warns when prefix and tier disagree.
+#
+# `expected` is what this particular test observes, not a copy of the
+# requirement's expected observation. One requirement usually needs several
+# tests — positive, boundary, negative — each seeing a different part of it.
+#
+# The last four fields of every test are written by the runner and never by
+# hand. A status carrying a commit that is not HEAD is stale: it says what
+# happened then, not what happens now.
+#
+#   status:  not done | successful | failed
+#   reason:  why, when the status is `not done`
+#   commit:  what it ran against
+#   when:    when it ran
+#
+# Procedures (P-*) are in docs/Harness/procedures.md.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Capabilities
+#
+# What the environment must provide for a test to run at all. A test needing
+# one that is unavailable is `not done` for that reason — computed, not typed,
+# so an absent rig can never be mistaken for a passing one.
+#
+# This lists what THIS project's tests need. The workbench can do more (BLE,
+# SDR, signal generation); none of it is used here, so none of it is listed.
+# ─────────────────────────────────────────────────────────────────────────
+
+capabilities:
+
+  board:
+    what:      The gPlug-mini board in workbench slot 1, resettable and readable over serial
+    available: yes
+
+  mbus-sim:
+    what:      MBUS-Simulator in workbench slot 3, driven over its console
+    available: yes
+    notes:     modes 1-3, plus fault / gap / silence / serial / identity / energy / scaler
+
+  mqtt-broker:
+    what:      mosquitto on the workbench, reachable from the bench access point
+    available: yes
+    notes:     start on BOTH benches — the board joins whichever radio is stronger and cannot say which
+
+  wifi-ap:
+    what:      The gplug-bench access point the board joins
+    available: yes
+
+  wifi-ap-outage:
+    what:      Stopping and restarting that access point on demand, to test recovery
+    available: no
+    notes:     it is a NetworkManager connection owning wlan0; the workbench's own ap_stop does not touch it
+
+  home-assistant:
+    what:      Home Assistant at 192.168.0.202:8123
+    available: yes
+
+  ha-bridge:
+    what:      The bench broker bridged to Home Assistant's broker, so published data reaches it
+    available: no
+    notes:     the board publishes to 10.42.0.1 on the isolated bench network; HA is on the LAN
+
+  ota-relay:
+    what:      An update source the board can be pointed at from the bench
+    available: no
+
+  button-gpio:
+    what:      The board's button pin driven from a workbench output
+    available: no
+    notes:     verified 2026-08-05 — workbench pin 18 held low for 7 s produced no reaction
+
+  real-meter:
+    what:      The installed Landis+Gyr E450, in the cabin
+    available: no
+
+# ─────────────────────────────────────────────────────────────────────────
+# Chapter 7 — Meter Interface
+# ─────────────────────────────────────────────────────────────────────────
+
+tests:
+
+- id: TS-001
+  verifies: [FR-MTR-05]
+  tier:     host
+  needs:    []
+  does:      Decodes a reference capture whose meter serial is 16 characters
+  expected:  Serial read whole, at the length the fixture carries
+  procedure: ctest -R TS-001
+  status:    successful
+  reason:
+  commit:    8490f3e
+  when:      2026-08-05T08:58Z
+
+- id: TS-002
+  verifies: [FR-MTR-05]
+  tier:     host
+  needs:    []
+  does:      Decodes a reference capture whose meter serial is 8 characters
+  expected:  Serial read whole, without a rebuild between the two forms
+  procedure: ctest -R TS-002
+  status:    successful
+  reason:
+  commit:    8490f3e
+  when:      2026-08-05T08:58Z
+
+- id: TS-007
+  verifies: [FR-MTR-09, FR-DEC-04, FR-HA-05]
+  tier:     host
+  needs:    []
+  does:      Maps every register of a published capture to its label and unit
+  expected:  Right label, unit and scale for each; no value on a wrong label
+  procedure: ctest -R TS-007
+  status:    successful
+  reason:
+  commit:    8490f3e
+  when:      2026-08-05T08:58Z
+
+- id: TS-009
+  verifies: [FR-MTR-06]
+  tier:     host
+  needs:    []
+  does:      Feeds a capture starting 17 bytes in, inside the first frame
+  expected:  The remaining frames still decode — alignment recovered
+  procedure: ctest -R TS-009
+  status:    successful
+  reason:
+  commit:    8490f3e
+  when:      2026-08-05T12:41Z
+
+- id: TS-010
+  verifies: [FR-MTR-06]
+  tier:     host
+  needs:    []
+  does:      Starts 200 bytes in, losing the opening frames entirely
+  expected:  The remaining frames still decode — alignment recovered
+  procedure: ctest -R TS-010
+  status:    successful
+  reason:
+  commit:    8490f3e
+  when:      2026-08-05T12:41Z
+
+- id: TS-011
+  verifies: [FR-MTR-07]
+  tier:     host
+  needs:    []
+  does:      Feeds a capture with one corrupted checksum byte
+  expected:  That frame contributes nothing to the set
+  procedure: ctest -R TS-011
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-012
+  verifies: [FR-MTR-08]
+  tier:     host
+  needs:    []
+  does:      The same corrupted capture, observed at the decoder's input rather than its output
+  expected:  The decoder is never handed any byte of the bad frame
+  procedure: ctest -R TS-012
+  status:    not done
+  reason:    test not written; needs a firmware seam to observe decoder input
+  commit:
+  when:
+
+- id: TS-013
+  verifies: [FR-MTR-10]
+  tier:     host
+  needs:    []
+  does:      Decodes three captures — identity as logical device name, as device ID 1, and absent
+  expected:  Identity found in the first two; with neither, discovery defers rather than inventing one
+  procedure: ctest -R TS-013
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-014
+  verifies: [FR-MTR-01, FR-MTR-02, FR-MTR-03]
+  tier:     target
+  needs:    [board]
+  does:      Boots the board and inspects the live UART and pad configuration
+  expected:  2400 8E1, receive inverted, both internal pulls disabled
+  procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-015
+  verifies: [FR-MTR-04]
+  tier:     bench
+  needs:    [board, mbus-sim, button-gpio, ota-relay]
+  does:      Watches the meter line for 10 minutes across every state, including Provisioning and OTA
+  expected:  No transmitted edge at any point, including during boot
+  procedure: P-METER
+  status:    not done
+  reason:
+  commit:
+  when:
+
+- id: TS-016
+  verifies: [FR-MTR-05]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Switches the simulator between `serial 8` and `serial 16` on the wire
+  expected:  Both decode with no reflash between them
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-017
+  verifies: [FR-MTR-06]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator told `fault start-mid-frame` — one transmission begins partway through
+  expected:  The cycle after the disturbed one is complete, identity included
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-018
+  verifies: [FR-MTR-06]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Resets the board mid-transmission — the case that happens on every real power-up
+  expected:  The first complete cycle after boot decodes; no second power cycle needed
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-019
+  verifies: [FR-MTR-07, FR-MTR-08]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
+  expected:  Frame 2 discarded and counted; frames 1, 3 and 4 still decode
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-020
+  verifies: [NFR-MTR-01]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Emits the longest telegram the reference captures contain, 491 bytes, in one burst
+  expected:  Every byte received; the device's count matches the simulator's
+  procedure: P-METER
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+- id: TS-021
+  verifies: [FR-MTR-09, FR-MTR-10]
+  tier:     field
+  needs:    [real-meter]
+  does:      Reads the installed meter and compares against the meter's own display
+  expected:  Values and identity match what the meter shows
+  procedure: P-FIELD
+  status:    not done
+  reason:
+  commit:
+  when:
