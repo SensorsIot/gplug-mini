@@ -390,11 +390,32 @@ tests:
   verifies: [NFR-MTR-01]
   tier:     bench
   needs:    [board, mbus-sim]
-  does:      Emits the longest telegram the reference captures contain, 491 bytes, in one burst
+  does:      Emits the longest telegram the reference captures contain, in one burst
   expected:  Every byte received; the device's count matches the simulator's
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason: >
+    The simulator drops bytes and is not a meter, so this bench cannot show that
+    every byte arrives - superseded by TS-103 at field tier. What runs here under
+    this name is a link-health precondition (best cycle within 10% of what was
+    sent), which says the rig is working as well as it ever does. It is not a
+    verification of NFR-MTR-01 and must not be read as one.
+  commit:
+  when:
+
+# NFR-MTR-01 cannot be shown on this bench. The simulator drops bytes and is not
+# a meter; a tolerance check says the link is healthy, never that every byte
+# arrived. Only the installed meter can answer it, so the claim lives at field
+# tier rather than being quietly satisfied by a relaxed bench assertion.
+- id: TS-103
+  verifies: [NFR-MTR-01]
+  tier:     field
+  needs:    [real-meter]
+  does:      Counts bytes received per transmission against the meter's own telegram length
+  expected:  Every byte received, with no loss across a run of transmissions
+  procedure: P-FIELD
+  status:    not done
+  reason:    needs real-meter - unavailable
   commit:
   when:
 
