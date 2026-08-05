@@ -168,18 +168,34 @@ nothing outside the process.
 
 ## Run order
 
-A bench run costs minutes per test, so the order decides how long it takes to
-learn something. Three rules, in priority order:
+Ordered by **what a test proves**, not by what it costs. A failure early makes
+everything after it unreadable, and that matters more than minutes.
 
-1. **Gates first, and a failed gate skips the rest.** A run that continues
-   through decode tests after the link was found broken produces results that
-   are all unattributable — every one fails for the same upstream reason, and
-   the report reads as a dozen defects instead of one.
-2. **Cheap before expensive.** Anything that can fail in twenty seconds should
-   fail before anything that takes ninety.
-3. **Disruptive last.** Tests that reset the board, inject a fault or start a
-   download leave the rig unsettled, and the quiet tests should not pay for the
-   recovery.
+| Phase | Proves | Example |
+|---|---|---|
+| **1 host** | The logic, offline | Decode, OBIS mapping, cycle arithmetic |
+| **2 bread-and-butter** | The device does its job | A measurement reaches the broker |
+| **3 deviation** | Normal operation, not the simplest case | Either serial length; waking mid-transmission |
+| **4 exception** | Faults and malfunctions | Corrupted frame, silent line, outage, rollback |
+
+**Phase 2 is the gate, and its absence is a real risk.** A suite can accumulate
+deviation and malfunction cases and never assert that the product works — this
+one did, for a day, while a defect that stopped the device publishing entirely
+was found sideways through an unrelated test that could not name the device's
+topic. Write the bread-and-butter test first even though it feels too obvious to
+write down.
+
+**A deviation is not a malfunction.** Both meter serial lengths are normal
+configurations; waking mid-transmission is what happens on every power-up, and
+the interface spec calls resynchronisation an operating mode rather than an error
+path (§4.1). Filing those under faults hides the fact that nothing tests the
+ordinary case.
+
+Cost is the tiebreaker *inside* a phase, never across them: cheap before
+expensive, and anything that resets the board or injects a fault last within its
+phase, so quieter tests do not pay for the recovery. Tests that prove a
+negative — *no download happens* — cost their whole window every time and can
+only confirm nothing, so they sort late.
 
 Tests that prove a negative — *no download happens*, *nothing is published* —
 are the worst of both: they cost their whole window every time and can only ever

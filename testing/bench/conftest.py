@@ -44,30 +44,35 @@ def pytest_addoption(parser):
 
 # ── Run order ───────────────────────────────────────────────────────────────
 #
-# A bench run is minutes per test, so the order decides how long it takes to
-# learn something. Three rules, enforced here rather than by keeping the file
-# in a tidy order and hoping the next person notices.
+# Ordered by what a test proves, not by what it costs. A failure early makes
+# everything after it unreadable, and that matters more than minutes.
 #
-# 1. Gates first, and a failed gate skips the rest. A run that spends ten
-#    minutes on decode tests after the link was found broken has produced ten
-#    minutes of unattributable results — every one of them fails for the same
-#    upstream reason, and the report reads as twelve defects.
+#   1  host          offline, no rig — run separately, before any of this
+#   2  bread-and-butter   the device does its job: telegram in, measurement
+#                         published, entity discovered. Nothing else is worth
+#                         reading until this passes.
+#   3  deviation      still normal operation, just not the simplest case — both
+#                     serial lengths, waking mid-transmission, a reset. The
+#                     interface spec is explicit that mid-burst resynchronisation
+#                     is an operating mode rather than an error path (§4.1).
+#   4  exception      faults and malfunctions — corruption, silence, noise,
+#                     outages, rollback.
 #
-# 2. Cheap before expensive. Anything that can fail in twenty seconds should
-#    fail before anything that takes ninety, so a broken build is known early.
+# The bread-and-butter phase is the gate. Its failure skips the rest, because a
+# device that is not doing its job cannot tell you anything useful about how it
+# handles a corrupted frame.
 #
-# 3. Disruptive last. Tests that reset the board, inject faults or start a
-#    download leave the rig unsettled; running them before the quiet tests
-#    means the quiet tests pay for the recovery.
-#
-# Tests that prove a negative — "no download happens", "nothing is published" —
-# are the worst of both: they cost their full window every time and can only
-# ever confirm nothing. They go last, marked slow.
-ORDER = {"gate": 0, "fast": 1, "slow": 2, "disruptive": 3}
+# Cost is the tiebreaker inside a phase, not across phases: `slow` sorts after
+# `fast`, and anything that resets the board or injects a fault sorts last
+# within its phase so the quieter tests do not pay for the recovery.
+PHASE = {"breadandbutter": 0, "deviation": 1, "exception": 2}
+COST = {"fast": 0, "slow": 1}
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "gate: a precondition — failure skips the rest of the run")
+    config.addinivalue_line("markers", "breadandbutter: the device does its job — the gate")
+    config.addinivalue_line("markers", "deviation: normal operation, not the simplest case")
+    config.addinivalue_line("markers", "exception: a fault or malfunction")
     config.addinivalue_line("markers", "fast: completes in well under a minute")
     config.addinivalue_line("markers", "slow: needs a long observation window")
     config.addinivalue_line("markers", "disruptive: resets the board, injects a fault, or starts a download")
@@ -76,12 +81,12 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     def rank(item):
         marks = {m.name for m in item.iter_markers()}
-        # Unmarked tests sit with the fast ones rather than at either extreme:
-        # assuming a new test is a gate would give it authority to skip the run,
-        # and assuming it is slow would bury it.
-        bucket = min((ORDER[m] for m in marks if m in ORDER), default=ORDER["fast"])
-        disruptive = 1 if "disruptive" in marks else 0
-        return (bucket, disruptive, item.name)
+        # An unmarked test sorts as a deviation: calling it bread-and-butter
+        # would give it authority to skip the run, and calling it an exception
+        # would bury it behind every fault case.
+        phase = min((PHASE[m] for m in marks if m in PHASE), default=PHASE["deviation"])
+        cost = min((COST[m] for m in marks if m in COST), default=COST["fast"])
+        return (phase, cost, 1 if "disruptive" in marks else 0, item.name)
 
     items.sort(key=rank)
 
@@ -90,14 +95,18 @@ def pytest_collection_modifyitems(config, items):
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
-    if report.when == "call" and report.failed and "gate" in {m.name for m in item.iter_markers()}:
+    marks = {m.name for m in item.iter_markers()}
+    if report.when in ("setup", "call") and report.failed and "breadandbutter" in marks:
         item.session.gate_failed = item.name
 
 
 def pytest_runtest_setup(item):
     failed = getattr(item.session, "gate_failed", None)
-    if failed and "gate" not in {m.name for m in item.iter_markers()}:
-        pytest.skip(f"precondition {failed} failed — results below it would be unattributable")
+    if failed and "breadandbutter" not in {m.name for m in item.iter_markers()}:
+        pytest.skip(
+            f"{failed} failed — the device is not doing its job, so nothing below "
+            "it can be attributed"
+        )
 
 
 @pytest.fixture(scope="session")
