@@ -2,7 +2,7 @@
 
 ```yaml
 document_status:            draft
-fsd_version:                0.2.0
+fsd_version:                0.3.0
 repository:                 gplug-mini
 baseline_commit:            1b4db45
 applicable_firmware_version: 0.0.0-4f44d6b (bench)
@@ -17,6 +17,12 @@ change_history:
   - 0.2.0 · 2026-08-05 · verification contracts merged into the requirement
     tables; tier moved out of the FSD onto tests; requirements redistributed to
     the components that own them; two build-restating requirements removed
+  - 0.3.0 · 2026-08-05 · every requirement carries a contract. FR-WDT-01
+    weakened: it claimed every task is watchdog-subscribed, which no stimulus can
+    observe, and now claims a subscribed task that stalls causes a reset within
+    the configured period. Narrower on purpose - the wider claim needs a firmware
+    seam listing subscribers, and an unverifiable requirement is worse than a
+    smaller verifiable one
 superseded_requirements:
   - FR-MTR-09 · split; the identity half became FR-MTR-10
   - FR-CFG-01..04, FR-ERR-01..04, NFR-NET-03 · moved to their owning components
@@ -361,15 +367,15 @@ on "what is the device doing right now" derives from this state machine.
 |---|---|---|---|---|---|---|
 | **FR-SUP-01** | Must | On boot with no stored WiFi credentials, the device shall enter Provisioning. | Erase NVS, boot | SoftAP appears within 10 s | Device connects to any prior network | `[user]` D-C3 |
 | **FR-SUP-02** | Must | On boot with stored WiFi credentials, the device shall attempt to connect to the stored network. | Credentials stored, boot | Association attempt to the stored SSID | SoftAP appears | `[user]` D-C3 |
-| **FR-SUP-03** | Must | On loss of the WiFi association while credentials are stored, the device shall retry connection indefinitely. |  |  |  | `[user]` D-C4 |
+| **FR-SUP-03** | Must | On loss of the WiFi association while credentials are stored, the device shall retry connection indefinitely. | Remove the access point for 10 min with credentials stored | Connection attempts continue throughout, at the capped backoff | Attempts stop, or Provisioning is entered | `[user]` D-C4 |
 | **FR-SUP-04** | Must | The device shall not enter Provisioning as a consequence of failing to connect to a stored network. | `OPERATIONAL`; power off the access point for 10 min | Device retries throughout | **SoftAP appears at any point** | `[user]` D-C4 |
 | **FR-SUP-05** | Must | Successive reconnection attempts shall use an increasing interval capped at 30 s. | Deny association repeatedly; log attempt times | Intervals increase, then hold at 30 s ±2 s | Interval exceeds 30 s, or attempts stop | `[derived]` D-C4 |
 | **FR-SUP-06** | Must | The device shall enter Provisioning when the button is held for 5 s while running. | `OPERATIONAL`; hold the button 5 s | SoftAP appears within 5 s | Device reboots; download mode entered | `[user]` D-C3 |
 | **FR-SUP-07** | Must | The device shall leave Provisioning and resume connecting 300 s after entering it, when no credentials have been submitted. | Enter Provisioning with credentials stored; wait 300 s | Returns to `CONNECTING` | Remains in AP mode indefinitely | `[derived]` D-C3 |
 | **FR-SUP-08** | Must | The device shall continue decoding meter frames in every state. | Broker stopped; feed a cycle | Decode occurs and is logged | Ingestion stops while offline | `[derived]` |
-| **FR-SUP-09** | Must | The device shall treat WiFi SSID, WiFi passphrase and broker host as required, and enter Provisioning when any is absent. |  |  |  | `[derived]` |
-| **FR-SUP-10** | Must | The device shall accept an empty MQTT username and password. |  |  |  | `[derived]` |
-| **NFR-SUP-01** | Must | The device shall re-establish an MQTT session within 60 s of the broker becoming reachable. |  |  |  | `[pack:esp32]` |
+| **FR-SUP-09** | Must | The device shall treat WiFi SSID, WiFi passphrase and broker host as required, and enter Provisioning when any is absent. | Boot with each of SSID, passphrase and broker host absent in turn | Provisioning entered in each of the three cases | Operation attempted with an incomplete configuration | `[derived]` |
+| **FR-SUP-10** | Must | The device shall accept an empty MQTT username and password. | Provision with MQTT username and password both left blank | A broker session is established | The portal rejects the form, or no session is attempted | `[derived]` |
+| **NFR-SUP-01** | Must | The device shall re-establish an MQTT session within 60 s of the broker becoming reachable. | Stop the broker for 2 min, then restart it | A session is re-established within 60 s of the broker accepting connections | Recovery requires a device reset | `[pack:esp32]` |
 
 ### 6.3 State model (normative)
 
@@ -442,10 +448,10 @@ level shifter. Traffic is one-way.
 | **FR-MTR-09** | Must | The device shall map decoded OBIS codes to the measurement labels of Appendix B. | Feed a published capture | Every register maps to the right label, unit and scale | A value mapped to the wrong label | `[derived]` D-H2 |
 | **FR-MTR-10** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | Feed a capture carrying each object, then one carrying neither | Identity read from whichever is present; with neither, discovery defers | The wrong object preferred when both are present | `[code]` published captures |
 | **NFR-MTR-01** | Must | The receive path shall buffer at least 512 bytes of a single burst without loss. | Feed a 491-byte telegram, the longest measured in the reference captures | No byte dropped | Any byte dropped | `[proposed]` interface spec §2.2 |
-| **FR-MTR-11** | Must | The device shall store a DLMS key when supplied, and operate without one when it is absent. |  |  |  | `[user]` D-C1 |
-| **FR-MTR-12** | Must | The device shall continue operating in every state when the meter produces no data. |  |  |  | `[derived]` |
-| **FR-MTR-13** | Must | The device shall count discarded frames and make the count available on the serial console. |  |  |  | `[derived]` |
-| **FR-MTR-14** | Must | The device shall log a distinct condition when a burst is received but no block is found. |  |  |  | `[code]` published captures |
+| **FR-MTR-11** | Must | The device shall store a DLMS key when supplied, and operate without one when it is absent. | Boot with a DLMS key stored, then with the slot empty | Both boot and decode an unencrypted telegram | An absent key blocks startup | `[user]` D-C1 |
+| **FR-MTR-12** | Must | The device shall continue operating in every state when the meter produces no data. | Simulator `silence 60` | WiFi and the broker session hold; no measurement is published | A reset, or a stale set republished to fill the gap | `[derived]` |
+| **FR-MTR-13** | Must | The device shall count discarded frames and make the count available on the serial console. | Simulator `fault fcs 2`; read the counter on the console | The count rises by exactly one per corrupted frame | The count is unavailable, or good frames are counted | `[derived]` |
+| **FR-MTR-14** | Must | The device shall log a distinct condition when a burst is received but no block is found. | Simulator `fault noise 200`, then silence | A condition distinct from a decode failure is logged | Silence, or the same message a CRC failure produces | `[code]` published captures |
 
 FR-MTR-04 is a safety property, not a convenience: the customer interface is a
 metrologically sealed device, and transmitting on it is outside what a consumer
@@ -492,7 +498,7 @@ without configuration on the Home Assistant side. The peer is the MQTT broker.
 | **FR-HA-05** | Must | The device shall publish only measurements present in the decoded cycle. | Feed a cycle missing `U2` | No `U2` in the payload | `U2` present as 0 or a stale value | `[user]` D-D3 |
 | **FR-HA-06** | Must | The device shall register a last-will message marking itself unavailable, and publish availability on connection. | Cut DUT power while connected | Broker marks it unavailable within the keepalive window | Entity stays "available" indefinitely | `[pack:esp32]` |
 | **FR-HA-07** | Must | The device shall not retain measurement state messages. | Subscribe fresh after the DUT is offline | No measurement state delivered | A retained stale reading delivered | `[derived]` |
-| **FR-HA-08** | Must | The device shall derive its MQTT client identifier from its MAC address. |  |  |  | `[user]` D-H3 |
+| **FR-HA-08** | Must | The device shall derive its MQTT client identifier from its MAC address. | Read the client identifier the broker sees | It contains the device MAC | A random or fixed identifier that could collide between devices | `[user]` D-H3 |
 | **NFR-HA-01** | Must | A measurement set shall be published within 2 s of the cycle boundary that produced it. | Timestamp cycle boundary and broker receipt | Delta ≤ 2 s | Delta exceeds 2 s under normal load | `[derived]` |
 
 FR-HA-05 and FR-HA-07 are the same concern seen twice. A retained measurement, or
@@ -542,9 +548,9 @@ available. The peer is a human with a web browser.
 | **FR-PRV-04** | Must | The device shall sample the button only after boot completes. | Hold the button through a reset | Device boots normally | Serial-download mode entered | `[derived]` interface spec §3 |
 | **FR-PRV-05** | Must | The device shall persist submitted configuration to NVS before leaving Provisioning. | Submit configuration; power-cycle | Configuration survives | Values lost | `[derived]` D-C3 |
 | **FR-PRV-06** | Must | The device shall retain previously stored configuration when Provisioning ends without a submission. | Enter Provisioning, wait for timeout without submitting | Prior configuration intact | Configuration erased on entry | `[derived]` |
-| **FR-PRV-07** | Should | The configuration page shall list the WiFi networks the device can see. |  |  |  | `[pack:esp32]` |
-| **NFR-PRV-01** | Must | The SoftAP shall accept associations within 10 s of entering Provisioning. |  |  |  | `[derived]` |
-| **FR-PRV-08** | Must | The device shall resolve a broker address given as a `.local` hostname, or reject it at the portal with a stated reason. |  |  |  | `[derived]` |
+| **FR-PRV-07** | Should | The configuration page shall list the WiFi networks the device can see. | Enter Provisioning with at least one access point in range | The configuration page lists it | An empty list while networks are in range | `[pack:esp32]` |
+| **NFR-PRV-01** | Must | The SoftAP shall accept associations within 10 s of entering Provisioning. | Enter Provisioning, then associate with the SoftAP | Association succeeds within 10 s of entering the state | The SoftAP is advertised but refuses association | `[derived]` |
+| **FR-PRV-08** | Must | The device shall resolve a broker address given as a `.local` hostname, or reject it at the portal with a stated reason. | Enter `homeassistant.local` as the broker address at the portal | Either it resolves and a session follows, or the portal states why it cannot | The portal accepts it and the device fails to resolve after the portal has closed | `[derived]` |
 
 ### 9.3 Configuration collected
 
@@ -578,13 +584,13 @@ served over HTTPS.
 | **FR-OTA-01** | Must | The device shall begin a firmware download on receipt of a URL on its OTA command topic. | Publish a valid URL to the command topic | Download begins within 5 s | Command ignored | `[user]` D-U2 |
 | **FR-OTA-02** | Must | The device shall not initiate a firmware download from any other trigger. | Run 24 h with a newer release published | No download | Any unattended update | `[user]` D-U2 |
 | **FR-OTA-03** | Must | The device shall verify the TLS certificate chain of the download server against an embedded certificate authority, and abort the download on failure. | Serve an image over TLS with an untrusted certificate | Download aborted, image not written | Image accepted | `[user]` D-U5 |
-| **FR-OTA-04** | Must | The device shall write the downloaded image to the inactive OTA slot. |  |  |  | `[derived]` D-U3 |
-| **FR-OTA-05** | Must | The device shall mark a newly booted image valid only after an MQTT session is established. |  |  |  | `[user]` D-U4 |
-| **FR-OTA-06** | Must | The device shall not require a meter decode before marking an image valid. |  |  |  | `[user]` D-U4 |
-| **FR-OTA-07** | Must | On reset before an image is marked valid, the bootloader shall revert to the previously valid image. |  |  |  | `[user]` D-U3 |
+| **FR-OTA-04** | Must | The device shall write the downloaded image to the inactive OTA slot. | Trigger an update while running from one OTA slot | The image is written to the inactive slot | The running slot is overwritten | `[derived]` D-U3 |
+| **FR-OTA-05** | Must | The device shall mark a newly booted image valid only after an MQTT session is established. | Update to an image that boots but cannot reach the broker | The image is never marked valid | Validation on a successful boot alone | `[user]` D-U4 |
+| **FR-OTA-06** | Must | The device shall not require a meter decode before marking an image valid. | Update while the meter is silent | The image is marked valid once the broker session is established | A quiet meter causes a healthy build to roll back | `[user]` D-U4 |
+| **FR-OTA-07** | Must | On reset before an image is marked valid, the bootloader shall revert to the previously valid image. | Update, then reset before validation completes | The previously valid image runs | The unvalidated image boots again | `[user]` D-U3 |
 | **FR-OTA-08** | Must | The device shall continue decoding meter frames during a download. | Feed meter cycles throughout a download | Decoding continues | Ingestion stalls for the download | `[derived]` FR-SUP-08 |
 | **FR-OTA-09** | Must | The device shall abort a download on loss of WiFi and discard the partial image. | Disable the access point mid-download | Download aborted, partial image discarded | Partial image marked bootable | `[derived]` |
-| **NFR-OTA-01** | Must | The device shall report the running firmware version in its Home Assistant device information. |  |  |  | `[user]` D-B5 |
+| **NFR-OTA-01** | Must | The device shall report the running firmware version in its Home Assistant device information. | Read the device entry in Home Assistant after a session is established | The version shown matches the running firmware's version string | A blank, stale, or build-time-only version | `[user]` D-B5 |
 
 FR-OTA-05 and FR-OTA-06 are stated separately because they fail separately. The
 first is the bar; the second forbids raising it. An image that boots, joins WiFi
@@ -669,7 +675,7 @@ by the meter, happen whenever the meter does.
 
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
-| **FR-NVS-01** | Must | The device shall store configuration in NVS without encryption. |  |  |  | `[user]` D-C2 |
+| **FR-NVS-01** | Must | The device shall store configuration in NVS without encryption. | Provision the device, then dump the NVS partition | The stored configuration values are readable | Encryption present but undocumented — see NFR-SEC-01 | `[user]` D-C2 |
 | **FR-NVS-02** | Must | The device shall operate with defaults and enter Provisioning when the NVS namespace is absent or unreadable. | Corrupt the NVS partition; boot | Device boots and enters Provisioning | Boot loop; crash | `[pack:esp32]` |
 | **FR-NVS-03** | Must | Configuration shall survive an unclean power loss. | Cut power 100 times during normal operation | Configuration intact each time | Configuration lost or partially written | `[pack:esp32]` |
 
@@ -691,7 +697,7 @@ a project function — it is exercised transitively through §7.
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
 | **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | Decode a capture with a known true value | The published value equals the meter's value in the Appendix B unit | A value out by any power of ten | `[code]` dlms_parser |
-| **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. |  |  |  | `[code]` dlms_parser |
+| **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. | Decode a capture whose cumulative register exceeds 16,777,216 | The published value is exact | A value quantised by float | `[code]` dlms_parser |
 
 FR-DEC-03 is stated because the failure it prevents is invisible: if the library
 already scales and the application scales again, every reading is wrong by a
@@ -726,11 +732,11 @@ Returns the device to service after a software hang without a person present.
 
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
-| **FR-WDT-01** | Must | The device shall enable the task watchdog for every task it creates. |  |  |  | `[pack:esp32]` |
+| **FR-WDT-01** | Must | A task that stops feeding the task watchdog shall cause a device reset within the configured watchdog period. | Stall one watchdog-subscribed task | The device resets within the configured task-watchdog period (5 s) | The device continues running with a hung task | `[pack:esp32]` |
 | **FR-WDT-02** | Must | The device shall reset when a subscribed task fails to feed the watchdog within its timeout. | Command a test build into an infinite loop in one task | Device resets within the timeout and returns to `OPERATIONAL` | Device hangs indefinitely | `[pack:esp32]` |
 | **FR-WDT-03** | Must | The watchdog shall not reset the device during a normal meter cycle gap or a firmware download. | Feed no meter data for 30 min while connected; separately, run a full OTA | No reset in either case | Any watchdog reset | `[pack:esp32]` |
 | **FR-WDT-04** | Must | The device shall record the reset reason and make it available on the serial console after boot. | Force a watchdog reset; read the console | Reset reason reported as watchdog | Reason reported as power-on | `[pack:esp32]` |
-| **FR-WDT-05** | Must | The device shall not reset as a response to any network, broker or meter fault. |  |  |  | `[derived]` D-C4 |
+| **FR-WDT-05** | Must | The device shall not reset as a response to any network, broker or meter fault. | Drop the access point, stop the broker, and silence the meter, each in turn | The reset reason is unchanged across all three | Any reset attributable to a peer fault | `[derived]` D-C4 |
 
 FR-WDT-03 is the requirement that stops the watchdog becoming the fault. A meter
 silent for minutes and a multi-minute OTA download are both normal, and a naive
@@ -752,8 +758,8 @@ identifies the data; the **device** identifies the hardware reading it.
 
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
-| **FR-ID-01** | Must | Home Assistant entity identity shall derive from the meter serial. |  |  |  | `[user]` D-H3 |
-| **FR-ID-02** | Must | MQTT client identity and operational topics shall derive from the device MAC address. |  |  |  | `[user]` D-H3 |
+| **FR-ID-01** | Must | Home Assistant entity identity shall derive from the meter serial. | Publish discovery for a known meter, then present a different serial | `unique_id` follows the meter serial | Identity derived from the MAC, which loses history when the gPlug is replaced | `[user]` D-H3 |
+| **FR-ID-02** | Must | MQTT client identity and operational topics shall derive from the device MAC address. | Inspect the client identifier and the operational topic prefix | Both contain the device MAC | Two devices colliding on one topic | `[user]` D-H3 |
 | **FR-ID-03** | Must | Replacing the hardware reading a given meter shall not change entity identity. | Record entity IDs; swap in a second gPlug on the same meter | Entity IDs unchanged; history continues | Duplicate entities created | `[user]` D-H3 |
 
 FR-ID-03 is the reason for the split. Energy statistics accumulate for years; a
@@ -843,11 +849,11 @@ Which tests cover these requirements, and what each produced, is in
 
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
-| **FR-BLD-01** | Must | The firmware version shall derive from the git tag. |  |  |  | `[user]` D-B5 |
-| **FR-BLD-02** | Must | An untagged build's version shall include the short commit hash. |  |  |  | `[user]` D-B5 |
-| **FR-BLD-03** | Must | The simulated build shall be selected at compile time. |  |  |  | `[user]` D-T2/T3 |
+| **FR-BLD-01** | Must | The firmware version shall derive from the git tag. | Build at a tagged commit | The version string equals the tag | A version unrelated to the tag | `[user]` D-B5 |
+| **FR-BLD-02** | Must | An untagged build's version shall include the short commit hash. | Build an untagged commit | The version string includes the short commit hash | A version indistinguishable from a tagged release | `[user]` D-B5 |
+| **FR-BLD-03** | Must | The simulated build shall be selected at compile time. | Inspect the production binary and the variant-selection mechanism | Selection is a compile-time option; the production binary contains no capture data | Any runtime path that enables simulated data | `[user]` D-T2/T3 |
 | **FR-BLD-04** | Must | The production build shall contain no capability to generate measurement data. | Search the production binary for the embedded capture data | Absent | Any capture data present | `[user]` D-T3 |
-| **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. |  |  |  | `[user]` D-T4 |
+| **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. | Build the simulated variant | The version string carries the `-sim` suffix | A simulated build indistinguishable from production | `[user]` D-T4 |
 | **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | Run the simulated build against a Home Assistant instance | Entities appear only under the test prefix | Production entities created or overwritten | `[user]` D-T4 |
 | **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. | Inspect `.github/workflows/` | Both workflows trigger on `push`; the host job runs `ctest` | A workflow that runs only on a tag, or a build that skips the tests | `[user]` D-B1 |
 | **FR-BLD-08** | Must | Firmware shall be published only from a tagged commit. | Push to a branch without a tag | No release asset produced | A downloadable binary published | `[user]` D-B2 |
