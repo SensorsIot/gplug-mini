@@ -93,4 +93,21 @@ constexpr bool config_usable(const Config& c) {
   return config_fault(c) == ConfigFault::None;
 }
 
+// ── Storage (config_nvs.cpp, device only) ────────────────────────────────────
+//
+// Declared here rather than in a second header: the record and the reading of it
+// are one concern, and the host tests simply do not link the implementation.
+#ifndef GPLUG_HOST_TEST
+
+esp_err_t config_storage_init();
+ConfigFault config_load(Config& out);
+bool config_save(const Config& c);
+
+// What to run with: the stored record, or the build's defaults when it cannot
+// be used. When provisioning exists, this is where an unusable record starts
+// the portal instead.
+Config config_effective();
+
+#endif
+
 }  // namespace gplug

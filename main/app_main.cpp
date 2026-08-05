@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "config.h"
 #include "esp_timer.h"
 #include "framing.h"
 #include "ha_discovery.h"
@@ -180,8 +181,15 @@ extern "C" void app_main() {
   configure_leds();
   startup_indication();
 
-  gplug::wifi_start_and_wait();
-  gplug::mqtt_start();
+  // Storage first, then the configuration, then the network that depends on it.
+  // A device that cannot open its storage still runs on build defaults rather
+  // than looping — one in a meter cabinet that will not boot needs a visit
+  // (FR-NVS-02).
+  ESP_ERROR_CHECK(gplug::config_storage_init());
+  const gplug::Config conf = gplug::config_effective();
+
+  gplug::wifi_start_and_wait(conf);
+  gplug::mqtt_start(conf);
 
   dlms_parser::DlmsParser parser(on_value, nullptr);
   parser.load_default_patterns();

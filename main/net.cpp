@@ -1,5 +1,7 @@
 #include "net.h"
 
+#include "config.h"
+
 #include <cstdio>
 #include <cstring>
 
@@ -79,8 +81,8 @@ void on_mqtt(void*, esp_event_base_t, int32_t id, void* data) {
 
 const char* wifi_mac() { return mac_str; }
 
-void wifi_start_and_wait() {
-  ESP_ERROR_CHECK(nvs_flash_init());
+void wifi_start_and_wait(const Config& conf) {
+  // Storage is initialised in app_main, before the configuration is read.
   ESP_ERROR_CHECK(esp_netif_init());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
   esp_netif_create_default_wifi_sta();
@@ -96,14 +98,18 @@ void wifi_start_and_wait() {
 
   wifi_config_t cfg = {};
   std::snprintf(reinterpret_cast<char*>(cfg.sta.ssid), sizeof(cfg.sta.ssid),
-                "%s", CONFIG_GPLUG_WIFI_SSID);
+                "%s", conf.ssid);
   std::snprintf(reinterpret_cast<char*>(cfg.sta.password), sizeof(cfg.sta.password),
-                "%s", CONFIG_GPLUG_WIFI_PASSWORD);
+                "%s", conf.passphrase);
+
+  // An open network has no passphrase, and demanding WPA2 of one makes it
+  // unjoinable in a way that presents as bad credentials (config.h).
+  const bool open_network = conf.passphrase[0] == '\0';
 
   // Stated rather than inherited from a zero-initialised struct: the defaults
   // for these two have changed between IDF versions, and both failure modes
   // present as a plain disconnect.
-  cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+  cfg.sta.threshold.authmode = open_network ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
   cfg.sta.pmf_cfg.capable = true;
   cfg.sta.pmf_cfg.required = false;
 
@@ -115,17 +121,17 @@ void wifi_start_and_wait() {
   ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
   std::snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  ESP_LOGI(TAG, "station %s joining '%s'", mac_str, CONFIG_GPLUG_WIFI_SSID);
+  ESP_LOGI(TAG, "station %s joining '%s'", mac_str, conf.ssid);
 
   xEventGroupWaitBits(events, GOT_IP, pdFALSE, pdTRUE, portMAX_DELAY);
 }
 
-void mqtt_start() {
+void mqtt_start(const Config& conf) {
   status_topic(status_top, sizeof(status_top), mac_str);
   state_topic(state_top, sizeof(state_top), mac_str);
 
   esp_mqtt_client_config_t cfg = {};
-  cfg.broker.address.uri = CONFIG_GPLUG_MQTT_URI;
+  cfg.broker.address.uri = conf.broker;
   cfg.credentials.client_id = mac_str;          // FR-HA-08
   // Registered before connecting: the broker publishes it when the connection
   // drops without a DISCONNECT, which is what a power cut looks like.
@@ -137,7 +143,7 @@ void mqtt_start() {
   client = esp_mqtt_client_init(&cfg);
   ESP_ERROR_CHECK(esp_mqtt_client_register_event(client, MQTT_EVENT_ANY, &on_mqtt, nullptr));
   ESP_ERROR_CHECK(esp_mqtt_client_start(client));
-  ESP_LOGI(TAG, "broker %s, client id %s", CONFIG_GPLUG_MQTT_URI, mac_str);
+  ESP_LOGI(TAG, "broker %s, client id %s", conf.broker, mac_str);
 }
 
 bool mqtt_connected() { return connected; }

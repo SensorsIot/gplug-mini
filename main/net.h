@@ -9,10 +9,14 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "config.h"
+
 namespace gplug {
 
 // Blocks until the station has an address. Retries for as long as it takes.
-void wifi_start_and_wait();
+// Takes the configuration rather than reading Kconfig, so a provisioned device
+// and a bench build follow the same path.
+void wifi_start_and_wait(const Config& conf);
 
 // Colon-separated lower case, from the station interface. Identifies the MQTT
 // client and appears as a Home Assistant device connection — never as the key
@@ -22,7 +26,7 @@ const char* wifi_mac();
 // Connects and publishes availability. The last will is registered before
 // connecting, so a power cut marks the device offline without its cooperation
 // (FR-HA-06).
-void mqtt_start();
+void mqtt_start(const Config& conf);
 
 bool mqtt_connected();
 

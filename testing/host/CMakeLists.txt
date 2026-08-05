@@ -40,6 +40,10 @@ add_executable(test_cores test_cores.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../../main/
                           ${CMAKE_CURRENT_SOURCE_DIR}/../../main/ha_discovery.cpp)
 target_include_directories(test_cores PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
 target_compile_options(test_cores PRIVATE -Wall -Wextra)
+# config.h declares its storage functions behind this, because their signatures
+# need ESP-IDF headers that do not exist here. The record and the rules that
+# judge it are what the host tests want, and those need nothing.
+target_compile_definitions(test_cores PRIVATE GPLUG_HOST_TEST)
 
 enable_testing()
 set(FIXTURES ${CMAKE_CURRENT_SOURCE_DIR}/fixtures)
