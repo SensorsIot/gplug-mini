@@ -13,6 +13,12 @@
 #include <cstddef>
 #include <cstring>
 
+// Outside the namespace, and it has to be: an include inside `namespace gplug`
+// puts every declaration ESP-IDF makes into it. The host build never sees this.
+#ifndef GPLUG_HOST_TEST
+#include "esp_err.h"
+#endif
+
 namespace gplug {
 
 // Field limits are the protocol's, not ours. 802.11 caps the SSID at 32 octets
