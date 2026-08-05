@@ -229,6 +229,30 @@ def sim(sim_console):
     sim_console.known_state()
 
 
+@pytest.fixture(scope="session")
+def broker_host(request):
+    """The broker's address, from the workbench URL rather than written down."""
+    return request.config.getoption("--wt-url").split("//")[-1].split(":")[0]
+
+
+@pytest.fixture
+def dut_mac(dut):
+    """The MAC the device publishes under, read from its own log.
+
+    Not derived from anything: the topic tree is keyed on the station MAC, and a
+    test that computed it a second way would agree with itself and disagree with
+    the device.
+    """
+    for line in dut.lines(seconds=25):
+        m = re.search(r"gplug/([0-9a-f:]{17})/", line)
+        if m:
+            return m.group(1)
+    pytest.fail(
+        "the device never named its own topic in 25 s — it is not connected to "
+        "the broker, so nothing published to it would arrive"
+    )
+
+
 @pytest.fixture
 def broker(wb):
     """mosquitto, started for the test and left running.
