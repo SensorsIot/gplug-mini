@@ -170,15 +170,27 @@ class Sim:
                 )
         pytest.fail("simulator did not answer `status` — is another client attached?")
 
+    # Bytes of lead-in before the first frame. Without it the board decodes
+    # nothing at all: it loses a few bytes at the head of every burst, and those
+    # bytes are the opening `7E A0 95` of frame 1. Losing frame 1 loses GBT
+    # block 1, and blocks 2 and 3 arriving perfectly then reassemble into
+    # nothing. Measured 2026-08-05: 0 bytes of preamble decodes 0 objects, 6
+    # decodes 6, and so do 12 and 24.
+    #
+    # This compensates for the head loss so decoding can be tested at all. It
+    # does not explain or excuse it — see TS-025, which is that question.
+    PREAMBLE = 8
+
     def known_state(self):
-        """mode 3, no fault, identity emitted.
+        """mode 3, no fault, identity emitted, lead-in present.
 
         Asserted rather than assumed. It has been found set to `identity none`,
         which makes every discovery test fail for a reason that has nothing to
         do with the device — and the failure looks like the firmware never
         learning the meter serial, which is a real defect elsewhere.
         """
-        for c in ("fault none", "gap 0", "identity ldn", "mode 3"):
+        for c in ("fault none", "gap 0", "identity ldn", "mode 3",
+                  f"preamble {self.PREAMBLE} 0xFF"):
             self.command(c)
         state = self.status()
         assert state.get("fault") == "none", f"simulator still has {state.get('fault')} armed"
