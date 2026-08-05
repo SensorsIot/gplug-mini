@@ -30,7 +30,8 @@ set(BUILD_TESTING ON)
 # twice would let the test drift from what the library actually ships.
 add_executable(test_decode test_decode.cpp)
 target_link_libraries(test_decode PRIVATE dlms_parser)
-target_include_directories(test_decode PRIVATE ${dlms_parser_SOURCE_DIR}/src)
+target_include_directories(test_decode PRIVATE ${dlms_parser_SOURCE_DIR}/src
+                                                   ${CMAKE_CURRENT_SOURCE_DIR}/../../main)
 target_compile_options(test_decode PRIVATE -Wall -Wextra)
 
 # The pure cores, compiled from main/ — the firmware's own source, not a copy.
@@ -61,6 +62,14 @@ add_test(NAME TS-009.mid-burst-recovery
          COMMAND test_decode midburst ${FIXTURES}/e450_serial8.hex 17)
 add_test(NAME TS-010.mid-burst-later
          COMMAND test_decode midburst ${FIXTURES}/e450_serial8.hex 200)
+
+# FR-MTR-06 again, from the other side. TS-009/010 open inside a frame and rely
+# on the decoder finding the next one. These two start on a flag that opens
+# nothing — the `7E 7E` that sits at every frame boundary on the wire.
+add_test(NAME TS-023.leading-flags-skipped
+         COMMAND test_decode leadflags ${FIXTURES}/e450_serial8.hex)
+add_test(NAME TS-024.midframe-prefix-then-boundary
+         COMMAND test_decode midprefix ${FIXTURES}/e450_serial8.hex)
 
 add_test(NAME TS-011.crc-invalid-frame-discarded
          COMMAND test_decode crcdrop ${FIXTURES}/e450_serial8.hex)

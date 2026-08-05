@@ -236,13 +236,25 @@ tests:
   verifies: [FR-MTR-06]
   tier:     host
   needs:    []
-  does:      Prepends one 0x7E, then two, to a complete capture
-  expected:  Full decode in both cases - a leading flag is skipped, not fatal
+  does:      Prepends one, two and three 0x7E bytes to a complete capture
+  expected:  Full decode in every case - a leading flag is skipped, not fatal
   procedure: ctest -R TS-023
-  status:    not done
-  reason:    test not written; firmware does not skip leading flags yet
-  commit:
-  when:
+  status:    successful
+  reason:
+  commit:    1f24a7b
+  when:      2026-08-05T16:10Z
+
+- id: TS-024
+  verifies: [FR-MTR-06]
+  tier:     host
+  needs:    []
+  does:      Opens a capture 40 bytes before a frame boundary, so the next frame is past a `7E 7E`
+  expected:  The frames after the boundary decode
+  procedure: ctest -R TS-024
+  status:    successful
+  reason:
+  commit:    1f24a7b
+  when:      2026-08-05T16:10Z
 
 - id: TS-014
   verifies: [FR-MTR-01, FR-MTR-02, FR-MTR-03]

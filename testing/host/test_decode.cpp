@@ -17,6 +17,8 @@
 
 #include "dlms_parser/dlms_parser.h"
 
+#include "framing.h"
+
 namespace {
 
 int failures = 0;
@@ -47,6 +49,12 @@ struct Value {
 std::vector<Value> decode_bytes(std::vector<uint8_t> bytes) {   // parse() takes a mutable span
   static std::vector<Value> out;          // static: the callback is a plain function
   out.clear();
+
+  // The same trim the firmware applies before parsing (FR-MTR-06). It is in the
+  // path of every case here on purpose: a fixture that only decodes when handed
+  // over untrimmed would be a test of the library, not of what ships.
+  const size_t skip = gplug::leading_flags(bytes.data(), bytes.size());
+  if (skip) bytes.erase(bytes.begin(), bytes.begin() + static_cast<long>(skip));
 
   dlms_parser::DlmsParser parser(
       [](const dlms_parser::AxdrCapture& c) {
@@ -183,6 +191,56 @@ void mid_burst_recovery(const char* fixture, size_t offset) {
   check(!values.empty(), "alignment recovered — the remaining frames still decode");
 }
 
+// TS-023 — FR-MTR-06. A capture preceded by bare HDLC flags.
+//
+// This is not a contrived input. A closing flag and the next opening flag are
+// adjacent on the wire, so `7E 7E` appears at every frame boundary, and a cycle
+// that begins near one starts with a flag that opens nothing. Observed on the
+// bench: six consecutive cycles each carried `7E 7E A0 92 ...`, and each decoded
+// nothing at all.
+//
+// The distinction that matters is between a flag and a frame start. `7E`
+// followed by `7E` is a boundary; `7E` followed by an `A0`-class byte is a
+// frame. Treating the first `7E` found as a frame start reads the second flag
+// as a format byte, and the whole remaining cycle is lost to a byte of padding.
+void leading_flags_skipped(const char* fixture) {
+  const auto whole = decode(fixture);
+  check(!whole.empty(), "the intact capture decodes, so the comparison means something");
+
+  for (size_t n : { size_t{ 1 }, size_t{ 2 }, size_t{ 3 } }) {
+    std::vector<uint8_t> bytes = read_hex(fixture);
+    bytes.insert(bytes.begin(), n, 0x7E);
+    const auto got = decode_bytes(std::move(bytes));
+    printf("       %zu leading flag(s): %zu of %zu value(s)\n",
+           n, got.size(), whole.size());
+    check(got.size() == whole.size(),
+          "a leading flag is skipped, not fatal — the capture decodes whole");
+  }
+}
+
+// TS-024 — FR-MTR-06. The bench case reproduced at host tier: a cycle that
+// opens inside a frame's payload, with the next real frame reachable only past
+// a `7E 7E` boundary. The prefix carries no flag of its own, so a decoder that
+// scans for framing has exactly one correct answer available to it.
+void midframe_prefix_then_boundary(const char* fixture) {
+  const std::vector<uint8_t> whole = read_hex(fixture);
+  const auto reference = decode_bytes(whole);
+  check(!reference.empty(), "the intact capture decodes, so the comparison means something");
+
+  // Find a frame start (7E followed by an A0-class byte) past the beginning,
+  // and cut the buffer to open in the payload that precedes it.
+  size_t frame = 0;
+  for (size_t i = 1; i + 1 < whole.size(); ++i) {
+    if (whole[i] == 0x7E && (whole[i + 1] & 0xF0) == 0xA0) { frame = i; break; }
+  }
+  check(frame > 40, "the fixture has a later frame to resynchronise onto");
+
+  std::vector<uint8_t> bytes(whole.begin() + static_cast<long>(frame) - 40, whole.end());
+  const auto got = decode_bytes(std::move(bytes));
+  printf("       opened 40 bytes before a frame boundary: %zu value(s)\n", got.size());
+  check(!got.empty(), "the frames after the boundary still decode");
+}
+
 // TS-011 — FR-MTR-07. One byte of a frame's checksum is flipped. The library
 // must drop that frame whole: a CRC exists so that a corrupted frame is treated
 // as absent rather than as data, and half a frame is worse than none because
@@ -243,6 +301,8 @@ int main(int argc, char** argv) {
   else if (name == "energy")     energy_needs_integers(fixture);
   else if (name == "midburst17") mid_burst_recovery(fixture, 17);
   else if (name == "midburst")   mid_burst_recovery(fixture, argc > 3 ? std::stoul(argv[3]) : 17);
+  else if (name == "leadflags")  leading_flags_skipped(fixture);
+  else if (name == "midprefix")  midframe_prefix_then_boundary(fixture);
   else if (name == "crcdrop")    crc_invalid_frame_discarded(fixture);
   else if (name == "noidentity") identity_absent(fixture);
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }

@@ -16,6 +16,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "framing.h"
 #include "ha_discovery.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -216,7 +217,13 @@ extern "C" void app_main() {
     values_this_cycle = 0;
     state_len = 0;
     state_json[0] = '\0';
-    const auto result = parser.parse({ cycle.data(), cycle.size() });
+
+    // A cycle that opens on a frame boundary starts with the closing flag of
+    // the frame before it, and that one byte costs the whole cycle (FR-MTR-06,
+    // TS-023). Only leading flags go — the payload behind them still decodes.
+    const size_t skip = gplug::leading_flags(cycle.data(), cycle.size());
+    if (skip) ESP_LOGD(TAG, "skipped %u leading flag byte(s)", static_cast<unsigned>(skip));
+    const auto result = parser.parse({ cycle.data() + skip, cycle.size() - skip });
     // Stack headroom after the parse, not before: the parser recurses over the
     // AXDR structure, so the depth depends on the telegram and the worst case
     // is whatever the meter sends, not whatever we tested with.
