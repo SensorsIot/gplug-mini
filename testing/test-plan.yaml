@@ -47,12 +47,31 @@ capabilities:
     what:      MBUS-Simulator in workbench slot 3, driven over its console
     available: yes
     notes:     modes 1-4, plus fault / gap / silence / serial / identity / energy / scaler
+    notes2: >
+      The console is driven over the RFC2217 proxy on port 4003 at 115200, not
+      through the workbench HTTP API, which can read serial but not write it.
+      The proxy takes ONE client, so a per-test connection races its own
+      teardown - testing/bench/conftest.py holds one for the session.
+
+      Its `status` line reports the state it is actually in. Check it rather than
+      assuming: it has been found on `identity none`, which makes every discovery
+      test fail for a reason that has nothing to do with the device.
     limitation: >
       The signal is not fully stable and this is accepted, not a defect to chase.
-      Measured 2026-08-05 with mode 4 (counted ramp, 381 bytes): two bursts in six
-      arrived complete and byte-perfect, four arrived corrupted from the first byte
-      with the dense-high-bit pattern of a rate or polarity mismatch. A burst either
-      lands cleanly or garbles - it does not lose a prefix.
+
+      Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives
+      either 409 byte-perfect from 0x00, or exactly 360 that are garbage from the
+      first byte - bimodal, four of nine clean. A burst lands whole or garbles;
+      it does not lose a prefix, and a garbled one also loses ~49 bytes.
+
+      Mode 1 (continuous 0x55) arrives as pure 0x55, so polarity, rate and parity
+      are right and the corruption is not a line-setting error (TS-022, passing).
+
+      Mode 3 behaves differently and worse: across 12 cycles the sizes were
+      317-389 of 409 and never once whole. So the e450 telegram has never been
+      delivered complete, and a `0 objects` result from a truncated burst is
+      correct behaviour rather than a decode defect. TS-020 asserts this and
+      currently fails - read it before reading any other meter result.
 
       So a bench assertion on decoded output must span several cycles and require
       one good one, never assert on a single cycle. A single-cycle test here is
