@@ -31,24 +31,23 @@ constexpr size_t ap_ssid(const uint8_t mac[6], char* out, size_t cap) {
   return (n > 0 && static_cast<size_t>(n) < cap) ? static_cast<size_t>(n) : 0;
 }
 
-// **PROPOSED RULE — not yet accepted.** D-C6 is cited by FR-PRV-02 as the
-// authority for "a documented rule" and does not state one, so this is a
-// proposal to be confirmed or replaced, not a settled decision.
+// `gplug` followed by the same three octets the SSID carries — eleven
+// characters, which clears the WPA2 minimum (D-C6).
 //
-// The passphrase is the full MAC as twelve lowercase hex characters. Twelve
-// clears the WPA2 minimum, it is derivable from a label carrying the MAC, and
-// it needs nothing stored to recover.
+// Derived from the octets that appear in the SSID, not from the full MAC,
+// because D-C6 requires it to be recoverable *without a label*. An owner reads
+// `gplug-25225c` in the scan list and types `gplug25225c`; a rule using the
+// three octets the SSID does not show would need a sticker, and a device in a
+// meter cabinet loses stickers.
 //
-// What it protects against, stated plainly because the alternative is a
-// requirement that reads stronger than it is: **casual association only.** The
-// MAC is broadcast in every beacon, so anyone within radio range who cares can
-// read it and compute this. Against the threat profile in FSD §18.1 — a device
-// in a private basement on a home network — that is the intended level. It is
-// not confidentiality, and FR-SEC-03's "WPA2-protected" must not be read as
-// claiming otherwise.
+// So it is not a secret, and is not meant to be. What it buys, stated plainly
+// because the alternative is a requirement that reads stronger than it is:
+// WPA2 encrypts the association, and the network refuses a client that does not
+// know the rule at all. Against §18.1's threat profile — a private basement, a
+// home network — that is the intended level. FR-SEC-03's "WPA2-protected" must
+// not be read as claiming confidentiality against anyone in radio range.
 constexpr size_t ap_passphrase(const uint8_t mac[6], char* out, size_t cap) {
-  const int n = std::snprintf(out, cap, "%02x%02x%02x%02x%02x%02x",
-                              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  const int n = std::snprintf(out, cap, "gplug%02x%02x%02x", mac[3], mac[4], mac[5]);
   if (n <= 0 || static_cast<size_t>(n) >= cap) return 0;
   if (static_cast<size_t>(n) < WPA2_MIN_PASSPHRASE) return 0;
   return static_cast<size_t>(n);

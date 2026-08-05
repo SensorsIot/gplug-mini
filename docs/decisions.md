@@ -52,7 +52,7 @@ here.
 | C3 | AP mode **only** on first boot with no stored credentials, or on a deliberate ~5 s button hold with a few-minute timeout back to retrying. `[user]` | State machine |
 | C4 | **Never self-demote to AP on WiFi loss.** Retry forever, backoff capped ~30 s. A router reboot must not strand the device in a portal nobody can see. `[user]` | The single most consequential availability decision |
 | C5 | GPIO9 is sampled only **after** boot — it is the ESP32-C3 strapping pin, and holding it low through reset forces serial-download mode. `[derived]` | Button handling |
-| C6 | The provisioning AP is **WPA2**, password derived per-device from the MAC and documented so it is recoverable without a label. `[user]` | Portal, user manual |
+| C6 | The provisioning AP is **WPA2**. SSID `gplug-<last 3 MAC octets>`, passphrase `gplug<same 3 octets>` — eleven characters, clearing the WPA2 minimum. Derived from the octets the SSID shows so an owner reads one off the scan list and types the other; a rule using octets the SSID hides would need a sticker, and a device in a meter cabinet loses stickers. Not a secret, and not meant to be: it encrypts the association and turns away a client that does not know the rule. `[user]` | Portal, user manual |
 
 ### 2.4 Update
 

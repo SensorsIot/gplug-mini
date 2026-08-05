@@ -258,7 +258,8 @@ void ap_identity() {
   const size_t n = gplug::ap_passphrase(mac, pass, sizeof(pass));
   printf("       passphrase = %s (%zu chars)\n", pass, n);
   check(n >= gplug::WPA2_MIN_PASSPHRASE, "passphrase clears the WPA2 minimum");
-  check(std::string(pass) == "b0818425225c", "passphrase is the full MAC in lowercase hex");
+  check(std::string(pass) == "gplug25225c",
+        "passphrase is gplug plus the octets the SSID shows — derivable from the scan list");
 
   // Two devices must not share a passphrase. Obvious, and exactly the property
   // a truncated or mis-indexed rule breaks while still producing valid output.
