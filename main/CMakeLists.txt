@@ -3,7 +3,7 @@
 # artefact rather than trusting this condition.
 set(EMBEDS "")
 if(CONFIG_GPLUG_SIM_METER)
-    set(EMBEDS "../test/host/fixtures/e450_serial8.hex")
+    set(EMBEDS "../testing/host/fixtures/e450_serial8.hex")
 endif()
 
 # PRIV_REQUIRES, not REQUIRES: main exposes no headers, so nothing downstream

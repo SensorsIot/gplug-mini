@@ -58,7 +58,7 @@ nothing outside the process.
 
 ## Test framework
 
-**Host tier: CMake and CTest, C++20, under `test/host/`.** The same language and
+**Host tier: CMake and CTest, C++20, under `testing/host/`.** The same language and
 standard as the firmware, so a host test exercises the code that ships rather
 than a reimplementation of it — a suite in another language can only test a
 second version of the logic, which is the one kind of test that cannot fail
@@ -71,7 +71,7 @@ these tests exist to notice when its behaviour changes. A branch would let it
 move underneath them.
 
 ```bash
-cmake -S test/host -B build/host && cmake --build build/host
+cmake -S testing/host -B build/host && cmake --build build/host
 ctest --test-dir build/host --output-on-failure
 ```
 

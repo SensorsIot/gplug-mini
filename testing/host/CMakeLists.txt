@@ -1,6 +1,6 @@
 # Host-tier tests. Plain compiler, no ESP-IDF, no hardware.
 #
-#   cmake -S test/host -B build/host && cmake --build build/host
+#   cmake -S testing/host -B build/host && cmake --build build/host
 #   ctest --test-dir build/host --output-on-failure
 #
 # dlms_parser is fetched at the same version the firmware pins (FR-DEC-01), so a

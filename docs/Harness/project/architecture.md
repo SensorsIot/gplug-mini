@@ -28,9 +28,9 @@ main/
   net/  wifi.{h,cpp}              L0  station and SoftAP lifecycle
         mqtt.{h,cpp}              L0  client lifecycle
 
-tests/host/     C++, no ESP-IDF headers
+testing/host/     C++, no ESP-IDF headers
 tests/target/   on-device
-tests/bench/    Python, drives the Embedded Workbench over HTTP
+testing/bench/    Python, drives the Embedded Workbench over HTTP
 ```
 
 `dlms_parser` is a managed component, not a module here. It is L0: it owns the
