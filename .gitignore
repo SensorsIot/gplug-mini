@@ -19,3 +19,6 @@ build-host/
 
 # Host-test build tree (CMake + fetched dlms_parser)
 build/
+
+# Claude state (credentials) — never commit
+.claude-data/
