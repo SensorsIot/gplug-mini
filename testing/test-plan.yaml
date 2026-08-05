@@ -77,6 +77,19 @@ capabilities:
       assuming: it has been found on `identity none`, which makes every discovery
       test fail for a reason that has nothing to do with the device.
     limitation: >
+      Mode 2 is the signal to test through, and it is solid. Measured 2026-08-05
+      over ten minutes: 74 cycles, every one 144 bytes, every one decoding all
+      four objects - power, energy and the meter identity. The values match what
+      the simulator reports sending (777 W, 12345 Wh, serial 44337811), which is
+      a stronger claim than "something decoded" and the one worth making.
+
+      It also carries the same energy register twice per cycle with different
+      scalers, so it exercises FR-AGG-04 on hardware for free - the first
+      occurrence is kept and the later one discarded, which until now was only
+      tested at host tier against a fixture.
+
+      Mode 3 is a different story and the rest of this note is about it.
+
       The signal is not fully stable and this is accepted, not a defect to chase.
 
       Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives
