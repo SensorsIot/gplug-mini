@@ -19,9 +19,9 @@ PROJECT = "gplug-mini"
 
 
 def image_url(wb_url, filename):
-    """The URL as the board sees it — the Pi is 10.42.0.1 on the bench network,
+    """The URL as the board sees it — the Pi is 192.168.27.1 on the bench network,
     not the LAN address this test client uses."""
-    return f"http://10.42.0.1:8080/firmware/{PROJECT}/{filename}"
+    return f"http://192.168.27.1:8080/firmware/{PROJECT}/{filename}"
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_ts062_neg_a_malformed_command_is_refused_and_said_so(dut, broker_host, 
     """
     mac = dut_mac
     dut.drain()
-    publish_ota(broker_host, mac, "10.42.0.1/app.bin")   # no scheme
+    publish_ota(broker_host, mac, "192.168.27.1/app.bin")   # no scheme
 
     line = dut.await_line(r"not a URL this device will download from", seconds=15)
     print(f"\n  {line}")

@@ -7,10 +7,16 @@
 # walk the portal first — the convenience belongs to the bench, never to the
 # image that leaves it.
 #
-# gplug-bench is a NetworkManager shared connection, so its gateway is
-# 10.42.0.1 and mosquitto on that Pi is reachable there. Note that the AP is not
-# necessarily hosted by the workbench you are driving: measured 2026-08-05, the
-# board reached a broker only when the OTHER bench was running one.
-CONFIG_GPLUG_WIFI_SSID="gplug-bench"
+# The SSID carries the bench radio's MAC (Workbench2 wlan0 dc:a6:32:03:7e:71) so
+# it cannot be confused with another bench's. The earlier note here said the
+# board "reached a broker only when the OTHER bench was running one" and drew the
+# wrong conclusion from it: both benches answered to `gplug-bench`, so the board
+# was simply joining the other one. It was never ambiguous — the board logs the
+# BSSID it associated with.
+#
+# The broker is the workbench's own LAN address rather than its AP gateway
+# (192.168.27.1): the AP NATs out to the LAN, so one address serves both the
+# bench tests and the device.
+CONFIG_GPLUG_WIFI_SSID="wb-037e71"
 CONFIG_GPLUG_WIFI_PASSWORD="benchtest123"
-CONFIG_GPLUG_MQTT_URI="mqtt://10.42.0.1:1883"
+CONFIG_GPLUG_MQTT_URI="mqtt://192.168.0.27:1883"

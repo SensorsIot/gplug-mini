@@ -121,27 +121,54 @@ capabilities:
       flaky by construction, and will be blamed on the firmware.
 
   mqtt-broker:
-    what:      mosquitto on the workbench, reachable from the bench access point
+    what:      mosquitto on Workbench2, reachable from the bench access point
     available: yes
-    notes:     start on BOTH benches — the board joins whichever radio is stronger and cannot say which
+    notes:     mqtt://192.168.0.27:1883, anonymous - the same address the bench tests use
+    limitation: >
+      An earlier note here said to start a broker on BOTH benches because "the
+      board joins whichever radio is stronger and cannot say which". That advice
+      was wrong and it cost a day on 2026-08-05. The board CAN say which - it
+      logs the BSSID it associated with - and the real problem was that both
+      benches answered to the SSID `gplug-bench`, so the DUT joined the other one
+      (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all.
+      Three correct broker addresses were each blamed in turn.
+
+      The fix is one bench with a unique SSID, not two brokers. Check
+      `wifi:connected with <ssid> ... bssid = <mac>` against the bench radio
+      before ever suspecting an address.
+
+      Mosquitto does NOT survive an rfc2217-portal restart - it stops silently
+      and the address then refuses connections. POST /api/mqtt/start after any
+      service restart.
 
   wifi-ap:
-    what:      The gplug-bench access point the board joins
+    what:      The bench access point the board joins, MAC-derived so it cannot be confused with another bench
     available: yes
+    notes: >
+      SSID `wb-037e71` (last 3 octets of the Workbench2 wlan0 MAC
+      dc:a6:32:03:7e:71), WPA2 `benchtest123`, channel 6, subnet 192.168.27.1/24
+      with DHCP .2-.20 - the third octet is the bench's own LAN host number, so
+      two benches can collide on neither SSID nor subnet.
+
+      192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP
+      default and belongs to a DUT running its own captive portal.
+
+      POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is
+      ignored and the AP comes up OPEN while still answering ok:true - the DUT
+      then refuses it under its authmode threshold.
 
   wifi-ap-outage:
     what:      Stopping and restarting that access point on demand, to test recovery
     available: yes
-    notes:     POST /api/wifi/ap_start | ap_stop, confirmed answering 2026-08-05
+    notes:     POST /api/wifi/ap_start | ap_stop, both confirmed working 2026-08-05
     limitation: >
-      Only the workbench's OWN access point can be stopped. gplug-bench is a
-      NetworkManager connection owning wlan0 and ap_stop does not touch it, so
-      a board joined to gplug-bench sees no outage however often it is called -
-      the test passes by observing nothing and proves nothing.
+      An earlier limitation here said gplug-bench was a NetworkManager connection
+      that ap_stop could not touch, so an outage test would observe nothing and
+      prove nothing. That no longer holds: the bench AP is hostapd started by the
+      workbench itself, and ap_stop/ap_start were exercised repeatedly during
+      provisioning on 2026-08-05.
 
-      So an outage test must first put the board on the workbench AP. Until
-      provisioning exists that means a Kconfig rebuild, which is why these three
-      tests wait on FR-PRV rather than on equipment.
+      These tests are therefore no longer blocked on equipment or on FR-PRV.
 
   home-assistant:
     what:      Home Assistant at 192.168.0.202:8123
@@ -150,7 +177,7 @@ capabilities:
   ha-bridge:
     what:      The bench broker bridged to Home Assistant's broker, so published data reaches it
     available: no
-    notes:     the board publishes to 10.42.0.1 on the isolated bench network; HA is on the LAN
+    notes:     the board publishes to the bench broker at 192.168.0.27; HA is on the same LAN
 
   ota-relay:
     what:      An update source the board can be pointed at from the bench
@@ -159,7 +186,7 @@ capabilities:
       The workbench firmware store, found 2026-08-05 and needing nothing built.
       POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file>
       serves it as application/octet-stream, which is the URL the board downloads
-      from - reachable as http://10.42.0.1:8080/... from the bench network.
+      from - reachable as http://192.168.27.1:8080/... from the bench network.
 
       POST /api/ota is NOT this. It runs espota.py against a board speaking
       ArduinoOTA, which is not the mechanism FR-OTA specifies.
@@ -572,9 +599,9 @@ tests:
   does:      Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several cycles
   expected:  At least one cycle decodes, and each value carries the label and unit its register maps to
   procedure: P-METER
-  status:    not done
-  reason:    written; awaiting a run
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - 144-byte cycles, 4-5 objects decoded each, labels and units correct"
+  commit:    e1ce921
   when:
 
 - id: TS-109
@@ -585,9 +612,9 @@ tests:
   does:      The same signal, with the simulator emitting an identity; watched for the meter serial
   expected:  The serial is read and reported - discovery is gated on it and publishes nothing without it
   procedure: P-METER
-  status:    not done
-  reason:    written; awaiting a run
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - meter serial 44337811 read from the identity frame"
+  commit:    e1ce921
   when:
 
 - id: TS-110
@@ -598,9 +625,9 @@ tests:
   does:      Subscribes to the state topic at the broker and waits for live messages
   expected:  At least two arrive; each is one complete non-empty JSON object, one per cycle
   procedure: P-NETWORK
-  status:    not done
-  reason:    written; awaiting a run
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - 5 live state messages at the broker, power 777 W and energy 12345 exactly as sent"
+  commit:    e1ce921
   when:
 
 - id: TS-111
@@ -611,9 +638,9 @@ tests:
   does:      Reads the retained discovery configs from the broker
   expected:  At least one config is retained and carries a unique_id keyed on the meter serial
   procedure: P-NETWORK
-  status:    not done
-  reason:    written; awaiting a run
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - retained configs, unique_id keyed on the meter serial (44337811_*)"
+  commit:    e1ce921
   when:
 
 - id: TS-030
@@ -843,7 +870,7 @@ tests:
   expected:  One retained config per Appendix B entity present in the cycle
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    "unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication is unproven"
   commit:
   when:
 
@@ -934,7 +961,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "half-run 2026-08-05 - the derived passphrase associates; the wrong-passphrase rejection is still unrun"
   commit:
   when:
 
@@ -947,7 +974,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "half-run 2026-08-05 - the derived SSID and passphrase associate; the wrong-passphrase rejection is still unrun"
   commit:
   when:
 
@@ -959,9 +986,9 @@ tests:
   does:      Associate and request any hostname
   expected:  The configuration page is served
   procedure: P-METER
-  status:    not done
-  reason:    the firmware does not implement this yet
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - example.com/generate_204 and any path both return the form. Re-run once 4a6caf8 is flashed; it changed page rendering"
+  commit:    e1ce921
   when:
 
 - id: TS-056
@@ -985,9 +1012,9 @@ tests:
   does:      Submit configuration; power-cycle
   expected:  Configuration survives
   procedure: P-METER
-  status:    not done
-  reason:    the firmware does not implement this yet
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - submission saved, device rebooted reporting cfg=nvs and joined the stored network"
+  commit:    e1ce921
   when:
 
 - id: TS-058
@@ -999,7 +1026,7 @@ tests:
   expected:  Prior configuration intact
   procedure: P-METER
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1012,7 +1039,7 @@ tests:
   expected:  The configuration page lists it
   procedure: P-NETWORK
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "unrun - the page was served but its network list was never inspected. 4a6caf8 moved the scan to portal start, so verify the list survives"
   commit:
   when:
 
@@ -1025,7 +1052,7 @@ tests:
   expected:  Association succeeds within 10 s of entering the state
   procedure: P-NETWORK
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "unrun - association works, but the timing NFR was never measured"
   commit:
   when:
 
@@ -1037,9 +1064,9 @@ tests:
   does:      Enter `homeassistant.local` as the broker address at the portal
   expected:  Either it resolves and a session follows, or the portal states why it cannot
   procedure: P-NETWORK
-  status:    not done
-  reason:    the firmware does not implement this yet
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 with a schemeless literal (192.168.4.1) rather than homeassistant.local - same rule, refused with \"broker URI has no scheme\""
+  commit:    e1ce921
   when:
 
 - id: TS-106
@@ -1064,7 +1091,7 @@ tests:
   expected:  Download begins within 5 s
   procedure: P-METER
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1090,7 +1117,7 @@ tests:
   expected:  Download aborted, image not written
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1103,7 +1130,7 @@ tests:
   expected:  The image is written to the inactive slot
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1116,7 +1143,7 @@ tests:
   expected:  The image is never marked valid
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1129,7 +1156,7 @@ tests:
   expected:  The image is marked valid once the broker session is established
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1142,7 +1169,7 @@ tests:
   expected:  The previously valid image runs
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1155,7 +1182,7 @@ tests:
   expected:  Decoding continues
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1168,7 +1195,7 @@ tests:
   expected:  Download aborted, partial image discarded
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1318,7 +1345,7 @@ tests:
   expected:  The stored configuration values are readable
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1331,7 +1358,7 @@ tests:
   expected:  Device boots and enters Provisioning
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1344,7 +1371,7 @@ tests:
   expected:  Configuration intact each time
   procedure: P-METER
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1357,7 +1384,7 @@ tests:
   expected:  The device resets within the configured task-watchdog period (5 s)
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1370,7 +1397,7 @@ tests:
   expected:  Device resets within the timeout and returns to `OPERATIONAL`
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1383,7 +1410,7 @@ tests:
   expected:  No reset in either case
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1396,7 +1423,7 @@ tests:
   expected:  Reset reason reported as watchdog
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1461,7 +1488,7 @@ tests:
   expected:  Rejected, image not written
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1474,7 +1501,7 @@ tests:
   expected:  Rejected, image not written
   procedure: P-OTA
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1486,9 +1513,9 @@ tests:
   does:      Scan for the SoftAP while Provisioning is active
   expected:  The network advertises WPA2
   procedure: P-NETWORK
-  status:    not done
-  reason:    the firmware does not implement this yet
-  commit:
+  status:    successful
+  reason:    "passed 2026-08-05 - the scan shows the SoftAP as WPA2, not open"
+  commit:    e1ce921
   when:
 
 - id: TS-092
@@ -1500,7 +1527,7 @@ tests:
   expected:  No passphrase in any response body
   procedure: P-NETWORK
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1513,7 +1540,7 @@ tests:
   expected:  The WiFi passphrase is readable in plaintext
   procedure: P-TARGET
   status:    not done
-  reason:    the firmware does not implement this yet
+  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
   commit:
   when:
 
@@ -1612,9 +1639,9 @@ tests:
   does:      Searches a built production image for the bench WiFi credentials
   expected:  Neither the bench SSID nor its passphrase appears in the binary
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    written; awaiting a CI run
-  commit:
+  status:    successful
+  reason:    "passed in CI run 31055026834 - PASS TS-112 no bench credentials in the image"
+  commit:    4a6caf8
   when:
 
 - id: TS-101

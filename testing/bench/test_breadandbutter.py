@@ -25,6 +25,8 @@ import re
 
 import pytest
 
+from conftest import BENCH_HOST
+
 pytestmark = pytest.mark.breadandbutter
 
 
@@ -103,7 +105,7 @@ def test_ts110_a_measurement_reaches_the_broker(dut, broker, sim):
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    client.connect("192.168.0.27", 1883, 60)
+    client.connect(BENCH_HOST, 1883, 60)
     client.subscribe("gplug/+/state", qos=0)
     client.loop_start()
     try:
@@ -152,7 +154,7 @@ def test_ts111_discovery_is_published(dut, broker, sim):
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    client.connect("192.168.0.27", 1883, 60)
+    client.connect(BENCH_HOST, 1883, 60)
     client.subscribe("homeassistant/sensor/+/config", qos=0)
     client.loop_start()
     try:

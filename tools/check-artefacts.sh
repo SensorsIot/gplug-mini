@@ -55,7 +55,9 @@ else
   # Provisioning, and eleven requirements are dead code in the field. This
   # project shipped exactly that until 2026-08-05, so the check inspects the
   # binary rather than trusting the Kconfig default it was built from.
-  case "$(strings "$BIN" | grep -cE '^(gplug-bench|benchtest123)$')" in
+  # Both the current bench SSID and the retired one: an image built from an old
+  # checkout leaks credentials just as effectively as one built from today's.
+  case "$(strings "$BIN" | grep -cE '^(wb-037e71|gplug-bench|benchtest123)$')" in
     0) check TS-112 "no bench credentials in the image" 0 ;;
     *) check TS-112 "no bench credentials in the image" 1 ;;
   esac

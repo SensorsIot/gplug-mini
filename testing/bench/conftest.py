@@ -352,14 +352,33 @@ def dut_mac(dut):
     )
 
 
+# The bench identity, in one place because it was scattered and drifted.
+#
+# The SSID carries the bench radio's MAC and the AP subnet carries the bench's
+# own LAN octet, so no two benches can be confused for one another. That is the
+# fix for the failure of 2026-08-05: two benches both answered to `gplug-bench`,
+# the board joined the other one, and three correct broker addresses were each
+# blamed in turn before anyone read the BSSID in the board's own log.
+BENCH_SSID = "wb-037e71"           # last 3 octets of Workbench2 wlan0 dc:a6:32:03:7e:71
+BENCH_PASS = "benchtest123"
+BENCH_HOST = "192.168.0.27"        # the bench on the LAN; NAT makes it reachable from the AP
+BROKER_URI = f"mqtt://{BENCH_HOST}:1883"
+BENCH_AP_GATEWAY = "192.168.27.1"  # the bench as an AP; 192.168.4.1 belongs to the DUT's portal
+
+
 @pytest.fixture
 def broker(wb):
     """mosquitto, started for the test and left running.
 
-    Start it on BOTH benches when two are powered: both broadcast `gplug-bench`
-    and both gateways are 10.42.0.1, the board joins whichever radio is stronger
-    and cannot tell you which. Start one and the board may land on the quiet one
-    and report only a TCP error.
+    One bench, one broker. An earlier version of this docstring said to start a
+    broker on both benches because the board "cannot tell you which" it joined —
+    that was wrong twice over. The board logs the BSSID it associated with, and
+    the actual problem was a shared SSID, which a second broker papers over
+    instead of fixing.
+
+    Mosquitto does not survive an rfc2217-portal restart, so this checks rather
+    than assumes: a stopped broker refuses connections at an address that was
+    working minutes earlier.
     """
     status = wb.mqtt_status()
     if not status.get("running"):
