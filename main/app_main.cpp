@@ -123,6 +123,10 @@ unsigned undecoded = 0;
 // (FR-AGG-04) and staying silent when nothing decoded (FR-AGG-06).
 gplug::CycleSet cycle_set;
 char meter_serial[32] = "";
+// Where the running configuration came from. A bench session that cannot tell
+// "provisioned" from "fell back to build defaults" is reading a different code
+// path than it thinks (FR-NVS-02).
+const char* config_source = "unknown";
 bool discovery_done = false;
 
 void on_value(const dlms_parser::AxdrCapture& c) {
@@ -243,6 +247,8 @@ extern "C" void app_main() {
   // than looping — one in a meter cabinet that will not boot needs a visit
   // (FR-NVS-02).
   ESP_ERROR_CHECK(gplug::config_storage_init());
+  gplug::Config stored{};
+  config_source = (gplug::config_load(stored) == gplug::ConfigFault::None) ? "nvs" : "build";
   const gplug::Config conf = gplug::config_effective();
 
   // Provisioning only when there is nothing usable to try — neither stored nor
@@ -348,6 +354,18 @@ extern "C" void app_main() {
     // Stack headroom after the parse, not before: the parser recurses over the
     // AXDR structure, so the depth depends on the telegram and the worst case
     // is whatever the meter sends, not whatever we tested with.
+    // One line per cycle carrying everything a bench session asks about, so a
+    // question costs a read rather than a reflash: what the device thinks its
+    // state is, where its configuration came from, whether it knows the meter,
+    // and whether the broker is there. Cheap, always on, and it is the line
+    // every bench test greps.
+    ESP_LOGI(TAG, "diag: state=%s cfg=%s meter=%s broker=%s values=%u",
+             gplug::indication_name(),
+             config_source,
+             meter_serial[0] ? meter_serial : "-",
+             gplug::mqtt_connected() ? "up" : "down",
+             static_cast<unsigned>(values_this_cycle));
+
     ESP_LOGI(TAG, "cycle: %u bytes, %u objects, %u consumed in %u pass(es), %u B stack free",
              static_cast<unsigned>(cycle.size()),
              static_cast<unsigned>(result.count),

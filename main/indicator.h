@@ -68,7 +68,23 @@ constexpr bool distinguishable(Indication a, Indication b) {
          x.period_ms != y.period_ms;
 }
 
+// The current indication, by name. A seam: the LED pins reach nothing the bench
+// can read, so this is the only way a test can see what the state machine chose.
+constexpr const char* name_of(Indication i) {
+  switch (i) {
+    case Indication::Boot:         return "boot";
+    case Indication::Provisioning: return "provisioning";
+    case Indication::Connecting:   return "connecting";
+    case Indication::Linked:       return "linked";
+    case Indication::Operational:  return "operational";
+    case Indication::Updating:     return "updating";
+  }
+  return "?";
+}
+
 #ifndef GPLUG_HOST_TEST
+const char* indication_name();
+
 // Starts the indicator task and runs the BOOT sequence. Idempotent.
 void indicator_start();
 

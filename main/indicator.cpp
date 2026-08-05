@@ -101,6 +101,8 @@ void indicator_start() {
 // It does not prove an LED lit, that the colour is right, or that the pin is
 // connected. Only a person looking at the board can close that gap, and one
 // field observation does it for all five requirements.
+const char* indication_name() { return name_of(current); }
+
 void indicate(Indication i) {
   if (i != current) ESP_LOGI(TAG, "indication -> %d", static_cast<int>(i));
   current = i;
