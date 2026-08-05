@@ -59,7 +59,7 @@ jobs:
       - name: Trust the workspace
         run: git config --global --add safe.directory '*'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # ESP-IDF derives esp_app_desc_t's version from `git describe` when
           # PROJECT_VER is unset. The default shallow checkout has no tags, so
