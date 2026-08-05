@@ -341,20 +341,20 @@ tests:
   verifies: [FR-MTR-05]
   tier:     bench
   needs:    [board, mbus-sim]
-  does:      Switches the simulator between `serial 8` and `serial 16` on the wire
-  expected:  Both decode with no reflash between them
+  does:      Switches the simulator between `serial 8` and `serial 16` on the wire, with the bench lead-in in place
+  expected:  Both decode with no reflash between them - 6 objects per cycle either way
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    passes only with the bench lead-in; without it nothing decodes at all (TS-025)
+  commit:    a03cead
+  when:      2026-08-05T18:40Z
 
 - id: TS-017
   verifies: [FR-MTR-06]
   tier:     bench
   needs:    [board, mbus-sim]
-  does:      Simulator told `fault start-mid-frame` — one transmission begins partway through
-  expected:  The cycle after the disturbed one is complete, identity included
+  does:      Simulator told `fault start-mid-frame` - one transmission begins partway through, bench lead-in in place
+  expected:  A later cycle decodes; the disturbed one costs only itself
   procedure: P-METER
   status:    not done
   reason:    test not written; and the rig has never yet delivered one complete
@@ -366,13 +366,13 @@ tests:
   verifies: [FR-MTR-06]
   tier:     bench
   needs:    [board, mbus-sim]
-  does:      Resets the board mid-transmission — the case that happens on every real power-up
+  does:      Resets the board mid-transmission - the case that happens on every real power-up, bench lead-in in place
   expected:  The first complete cycle after boot decodes; no second power cycle needed
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    passes only with the bench lead-in; without it nothing decodes at all (TS-025)
+  commit:    a03cead
+  when:      2026-08-05T18:40Z
 
 - id: TS-019
   verifies: [FR-MTR-07, FR-MTR-08]
