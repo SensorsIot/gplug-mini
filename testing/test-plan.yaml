@@ -64,8 +64,18 @@ capabilities:
       first byte - bimodal, four of nine clean. A burst lands whole or garbles;
       it does not lose a prefix, and a garbled one also loses ~49 bytes.
 
-      Mode 1 (continuous 0x55) arrives as pure 0x55, so polarity, rate and parity
-      are right and the corruption is not a line-setting error (TS-022, passing).
+      Mode 1 cannot answer the polarity question, and an earlier note here saying
+      it had is withdrawn. The simulator does emit 0x55 (its own emit line reports
+      `pattern=0x55`, 218 bytes), but a pattern has no HDLC framing by
+      construction, and the firmware rotates its UART line settings after two
+      bursts with no framing. So the probe walks candidates during the test and
+      the board reports whichever setting it happened to be on - 0x55, 0x00 and
+      0xD5 in one run. The measurement moves under the measurer.
+
+      What does stand: the mode 3 telegram arrives with valid DLMS structure - a
+      readable date-time and OBIS codes in the first 32 bytes - so the line
+      settings are right for that mode and the truncation is not a polarity
+      error. TS-022 needs the probe pinned before it can mean anything.
 
       Mode 3 behaves differently and worse: across 12 cycles the sizes were
       317-389 of 409 and never once whole. So the e450 telegram has never been
@@ -311,7 +321,7 @@ tests:
   expected:  Every received byte is 0x55 - a polarity mismatch yields a uniform 0xD5 instead
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    written and running; needs a firmware seam to pin the UART line setting, which the probe otherwise rotates mid-test
   commit:
   when:
 

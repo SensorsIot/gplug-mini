@@ -36,6 +36,11 @@ def cycle_sizes(dut, seconds):
             if (m := re.search(r"cycle: (\d+) bytes", line))]
 
 
+@pytest.mark.xfail(
+    reason="the firmware's line-setting probe rotates on absent framing, and a "
+           "pattern has none by construction — the setting moves during the test",
+    strict=False,
+)
 def test_ts022_polarity_is_right(dut, sim):
     """TS-022 — FR-MTR-01, FR-MTR-02. Mode 1 drives a continuous 0x55.
 
@@ -43,6 +48,13 @@ def test_ts022_polarity_is_right(dut, sim):
     polarity error unnoticed: inverted, it arrives as a uniform 0xD5 rather than
     as noise. Run before anything that interprets content, because every later
     result depends on the bits being the right way up.
+
+    It cannot do that yet. The firmware probes UART candidates and rotates after
+    two bursts that show no HDLC framing — which a 0x55 pattern never shows. So
+    the probe walks candidates mid-test and the board reports whichever setting
+    it was on: one run collected 0x55, 0x00 and 0xD5 together. The test is right
+    and the seam is missing; it needs a way to pin the line setting, and that is
+    an obligation on the firmware rather than a reason to weaken the check.
     """
     # A mode change takes effect on the NEXT telegram, so the cycle in flight is
     # still e450. Draining before it has passed captures a mixture and the test
