@@ -759,34 +759,28 @@ tests:
   commit:
   when:
 
-# The head of every burst is lost, and that one fact cost the whole telegram.
+# TS-025 was a debugging aid, not a test case, and is withdrawn.
+#
+# It swept the simulator's preamble - 0, 6, 12 and 24 bytes - and recorded what
+# the board received. That answers "what does this rig do", never "what must the
+# device do", so it discharged no requirement, and counting it inflated the plan
+# by one entry that could not fail in any way that mattered.
+#
+# The measurement it produced is real and is kept where it belongs: on the
+# `mbus-sim` capability, as a property of the rig. FR-MTR-06 is discharged by
+# TS-009, TS-010, TS-017, TS-018 and TS-023, which state what the device owes.
 - id: TS-025
   verifies: [FR-MTR-06]
   kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim]
-  does:      Emits the telegram with no lead-in, then with 6, 12 and 24 bytes of it
-  expected:  Values decode with no lead-in - the device recovers its own alignment
-  procedure: P-METER
-  status:    failed
-  reason: >
-    Measured 2026-08-05. With no preamble the board decodes 0 objects on every
-    cycle; with 6, 12 or 24 bytes it decodes 6 on every cycle. So a handful of
-    bytes is lost at the head of each burst, and they are the opening 7E A0 95 of
-    frame 1 - which loses GBT block 1, after which blocks 2 and 3 arriving intact
-    reassemble into nothing.
-
-    This is not the simulator being lossy. The loss is at a fixed place every
-    time and a few bytes of lead-in remove it entirely.
-
-    It matters beyond the bench because FR-MTR-06 bounds the cost of a mid-burst
-    start at the cycle in progress. If the head goes every cycle, the next cycle
-    is never whole and recovery never happens. Whether the real meter's line
-    idles in a way that avoids this is unknown - the interface spec says the
-    front end presents an inverted idle and that both internal pulls must be off,
-    which leaves the pin undriven between bursts.
-  commit:    539fbb9
-  when:      2026-08-05T18:15Z
+  does:      WITHDRAWN - a rig characterisation, not a requirement check
+  expected:  n/a
+  procedure: n/a
+  status:    superseded
+  reason:    a debugging aid; the measurement lives on the mbus-sim capability
+  commit:
+  when:
 
 - id: TS-042
   verifies: [FR-MTR-12]

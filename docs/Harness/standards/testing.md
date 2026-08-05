@@ -64,7 +64,16 @@ asks "is this connected the way we think?" — polarity, parity, a pin actually
 wired — is cheaper than inferring the same fact from a journey that fails five
 steps later. TS-022 drives a continuous `0x55` for exactly this: it alternates
 every bit, so an inverted line yields a uniform `0xD5` rather than noise that
-looks like data. Bring-up tests are `standard` in kind, not a fifth bin; they are
+looks like data.
+
+**Most bring-up work is a debugging aid, not a test case, and stays out of the
+plan.** The question is whether it discharges a requirement or interrogates the
+rig. TS-022 asserts the device inverts its receive signal — a requirement, so a
+test. A sweep of the *simulator's* preamble to see what the board happens to
+receive is a measurement of the rig: keep the number, put it on the capability,
+and give it no test ID. TS-025 was exactly that mistake and is withdrawn.
+
+The bring-up work that is a test case is `standard` in kind, not a fifth bin —
 simply the first standard tests to run.
 
 **All host tests run, always, in full.** They cost milliseconds, so there is
