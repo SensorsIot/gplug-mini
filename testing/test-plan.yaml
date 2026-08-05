@@ -879,6 +879,18 @@ tests:
   commit:
   when:
 
+- id: TS-106
+  verifies: [FR-OTA-01, FR-OTA-02]
+  tier:     host
+  needs:    []
+  does:      Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an overlong string
+  expected:  Both schemes accepted; everything malformed refused before anything is fetched
+  procedure: ctest -R TS-106
+  status:    successful
+  reason:
+  commit:    d76cf86
+  when:      2026-08-05T20:10Z
+
 - id: TS-062
   verifies: [FR-OTA-01]
   tier:     bench

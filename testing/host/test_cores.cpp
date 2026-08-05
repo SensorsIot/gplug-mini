@@ -14,6 +14,7 @@
 #include "ha_discovery.h"
 #include "indicator.h"
 #include "obis_map.h"
+#include "ota.h"
 #include "provisioning.h"
 
 namespace {
@@ -329,6 +330,39 @@ void indications_distinguishable() {
         "CONNECTING and LINKED blink at different rates — colour alone cannot separate them");
 }
 
+// TS-106 — FR-OTA-01, FR-OTA-02. What the device will and will not download
+// from, decided before anything is fetched.
+//
+// The command topic carries the one input a person types by hand, and a
+// malformed value that reaches the downloader surfaces as a transport error
+// minutes later with nothing tying it back to the message. So the refusal is
+// worth more than the acceptance, and both are asserted here.
+void ota_url_rules() {
+  using gplug::ota_url_acceptable;
+
+  check(ota_url_acceptable("http://10.42.0.1:8080/firmware/gplug/app.bin"),
+        "the bench relay's URL is accepted");
+  check(ota_url_acceptable("https://example.com/a.bin"), "https is accepted");
+
+  check(!ota_url_acceptable(nullptr), "no payload is not a URL");
+  check(!ota_url_acceptable(""), "an empty payload is not a URL");
+  check(!ota_url_acceptable("10.42.0.1/app.bin"), "an address with no scheme is refused");
+  check(!ota_url_acceptable("ftp://example.com/a.bin"), "a scheme we cannot fetch is refused");
+  check(!ota_url_acceptable("http://"), "a scheme with nothing after it is refused");
+
+  // Whitespace and control characters are the visible signature of a truncated
+  // or line-wrapped payload — the shape a URL takes when it has been pasted
+  // through something that reflowed it.
+  check(!ota_url_acceptable("http://example.com/a.bin\n"), "a trailing newline is refused");
+  check(!ota_url_acceptable("http://exa mple.com/a.bin"), "an embedded space is refused");
+
+  // Longer than any image URL needs. An unbounded payload copied into a fixed
+  // buffer is the one failure here that is not merely inconvenient.
+  std::string huge = "http://example.com/";
+  huge.append(300, 'a');
+  check(!ota_url_acceptable(huge.c_str()), "an overlong URL is refused, not truncated");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -345,6 +379,7 @@ int main(int argc, char** argv) {
   else if (name == "config")   config_validity();
   else if (name == "apident")  ap_identity();
   else if (name == "leds")     indications_distinguishable();
+  else if (name == "otaurl")   ota_url_rules();
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

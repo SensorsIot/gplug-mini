@@ -26,6 +26,7 @@
 #include "meter_source.h"
 #include "net.h"
 #include "obis_map.h"
+#include "ota.h"
 #include "provisioning.h"
 #include "sdkconfig.h"
 
@@ -259,6 +260,7 @@ extern "C" void app_main() {
   gplug::wifi_start_and_wait(conf);
   gplug::mqtt_start(conf);
   gplug::indicate(gplug::Indication::Operational);   // §11.3: dark between publications
+  gplug::ota_start();
 
   dlms_parser::DlmsParser parser(on_value, nullptr);
   parser.load_default_patterns();

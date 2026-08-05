@@ -90,6 +90,8 @@ add_test(NAME TS-104.ap-identity COMMAND test_cores apident)
 
 add_test(NAME TS-105.indications-distinguishable COMMAND test_cores leds)
 
+add_test(NAME TS-106.ota-url-rules COMMAND test_cores otaurl)
+
 add_test(NAME TS-006.cycle-boundary COMMAND test_cores cycle)
 add_test(NAME TS-007.obis-mapping   COMMAND test_cores obis)
 add_test(NAME TS-008.discovery-payloads COMMAND test_cores discovery)

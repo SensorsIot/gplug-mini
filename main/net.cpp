@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "esp_event.h"
+#include "ota.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_wifi.h"
@@ -25,6 +26,7 @@ constexpr EventBits_t GOT_IP = BIT0;
 EventGroupHandle_t events;
 char mac_str[18] = "00:00:00:00:00:00";
 char status_top[96];
+char ota_top[96];
 char state_top[96];
 
 esp_mqtt_client_handle_t client = nullptr;
@@ -64,10 +66,26 @@ void on_mqtt(void*, esp_event_base_t, int32_t id, void* data) {
       // Availability is retained so a subscriber that arrives later still
       // learns the device is up (FR-HA-06).
       esp_mqtt_client_publish(client, status_top, "online", 0, 1, 1);
+      // QoS 1: an update command that the broker drops is a command the person
+      // who sent it believes was delivered (Appendix D).
+      esp_mqtt_client_subscribe(client, ota_top, 1);
+      // FR-OTA-05/06. A session, not a successful boot, is what makes a new
+      // image valid — an image that boots and cannot reach the broker is
+      // precisely the one rollback exists for.
+      ota_mark_valid_on_session();
       break;
     case MQTT_EVENT_DISCONNECTED:
       ESP_LOGW(TAG, "broker disconnected, client retries");
       connected = false;
+      break;
+    case MQTT_EVENT_DATA:
+      // FR-OTA-01. The only trigger there is: no polling, no version check, no
+      // schedule (FR-OTA-02, D-U2).
+      if (e && e->topic_len && std::strncmp(e->topic, ota_top, static_cast<size_t>(e->topic_len)) == 0) {
+        if (!ota_handle_command(e->data, static_cast<size_t>(e->data_len))) {
+          ESP_LOGW(TAG, "OTA command not acted on — see the reason above");
+        }
+      }
       break;
     case MQTT_EVENT_ERROR:
       ESP_LOGW(TAG, "mqtt error type %d", e ? e->error_handle->error_type : -1);
@@ -132,6 +150,7 @@ void wifi_start_and_wait(const Config& conf) {
 
 void mqtt_start(const Config& conf) {
   status_topic(status_top, sizeof(status_top), mac_str);
+  std::snprintf(ota_top, sizeof(ota_top), "gplug/%s/cmd/ota", mac_str);
   state_topic(state_top, sizeof(state_top), mac_str);
 
   esp_mqtt_client_config_t cfg = {};
