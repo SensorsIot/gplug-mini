@@ -30,7 +30,7 @@ here.
 
 | # | Decision | Gates |
 | --- | --- | --- |
-| D1 | Depend on `esphome/dlms_parser^1.2.0` (Apache-2.0) from the Espressif Component Registry rather than writing a decoder. `[user]` | `idf_component.yml`; the decoder is off the critical path |
+| D1 | Depend on `esphome/dlms_parser` (Apache-2.0) from the Espressif Component Registry rather than writing a decoder. The version lives in `idf_component.yml`, not here — a decision records why, not which release is current. `[user]` | `idf_component.yml`; the decoder is off the critical path |
 | D2 | The application compiles as **C++** — the library is C++20. `[derived]` | Project structure, build config |
 | D3 | Publish only the values present in the decoded burst. A zero meaning "absent" is indistinguishable from a real zero reading. `[derived]` | Payload construction |
 

@@ -286,7 +286,7 @@ Recorded so a later reader sees a decision rather than an omission.
 | Dependency | Version | Note |
 |---|---|---|
 | ESP-IDF | 6.0.2 | D-P4 |
-| `esphome/dlms_parser` | ^1.2.0, Apache-2.0 | D-D1. Third-party, not vendor-supported |
+| `esphome/dlms_parser` | ^2.1.0, Apache-2.0 | D-D1. Third-party, not vendor-supported |
 | `espressif/cjson` | latest | Not bundled in IDF 6 |
 | `espressif/mdns` | latest | Only if `.local` broker addresses are supported — FR-PRV-08 |
 | Home Assistant | any with MQTT discovery | External |
@@ -684,8 +684,6 @@ a project function — it is exercised transitively through §7.
 
 | ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
 |---|---|---|---|---|---|---|
-| **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^2.1.0 for DLMS decoding. |  |  |  | `[user]` D-D1 |
-| **FR-DEC-02** | Must | The dependency shall be resolved through the Espressif Component Registry and pinned by a committed `dependencies.lock`. |  |  |  | `[derived]` |
 | **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | Decode a capture with a known true value | The published value equals the meter's value in the Appendix B unit | A value out by any power of ten | `[code]` dlms_parser |
 | **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. |  |  |  | `[code]` dlms_parser |
 
@@ -817,7 +815,7 @@ Which tests cover these requirements, and what each produced, is in
 | **FR-BLD-04** | Must | The production build shall contain no capability to generate measurement data. | Search the production binary for the embedded capture data | Absent | Any capture data present | `[user]` D-T3 |
 | **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. |  |  |  | `[user]` D-T4 |
 | **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | Run the simulated build against a Home Assistant instance | Entities appear only under the test prefix | Production entities created or overwritten | `[user]` D-T4 |
-| **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. |  |  |  | `[user]` D-B1 |
+| **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. | Inspect `.github/workflows/` | Both workflows trigger on `push`; the host job runs `ctest` | A workflow that runs only on a tag, or a build that skips the tests | `[user]` D-B1 |
 | **FR-BLD-08** | Must | Firmware shall be published only from a tagged commit. | Push to a branch without a tag | No release asset produced | A downloadable binary published | `[user]` D-B2 |
 
 FR-BLD-04 and FR-BLD-06 protect the same thing from two directions. Home

@@ -27,7 +27,7 @@
 
 ## Language
 
-The application is C++ — the DLMS library is C++20 (`FR-DEC-01`). Prefer plain
+The application is C++ — the DLMS library is C++20 (D-D2). Prefer plain
 structs and free functions over class hierarchies; the pure cores must be callable
 from a host test with no ESP-IDF headers in scope.
 
