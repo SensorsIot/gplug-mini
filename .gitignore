@@ -22,3 +22,6 @@ build/
 
 # Claude state (credentials) — never commit
 .claude-data/
+
+# Working documents — kept out of the repo deliberately
+tmp/
