@@ -42,8 +42,62 @@ def pytest_addoption(parser):
     )
 
 
+# ── Run order ───────────────────────────────────────────────────────────────
+#
+# A bench run is minutes per test, so the order decides how long it takes to
+# learn something. Three rules, enforced here rather than by keeping the file
+# in a tidy order and hoping the next person notices.
+#
+# 1. Gates first, and a failed gate skips the rest. A run that spends ten
+#    minutes on decode tests after the link was found broken has produced ten
+#    minutes of unattributable results — every one of them fails for the same
+#    upstream reason, and the report reads as twelve defects.
+#
+# 2. Cheap before expensive. Anything that can fail in twenty seconds should
+#    fail before anything that takes ninety, so a broken build is known early.
+#
+# 3. Disruptive last. Tests that reset the board, inject faults or start a
+#    download leave the rig unsettled; running them before the quiet tests
+#    means the quiet tests pay for the recovery.
+#
+# Tests that prove a negative — "no download happens", "nothing is published" —
+# are the worst of both: they cost their full window every time and can only
+# ever confirm nothing. They go last, marked slow.
+ORDER = {"gate": 0, "fast": 1, "slow": 2, "disruptive": 3}
+
+
 def pytest_configure(config):
-    config.addinivalue_line("markers", "needs(cap): capability this test requires")
+    config.addinivalue_line("markers", "gate: a precondition — failure skips the rest of the run")
+    config.addinivalue_line("markers", "fast: completes in well under a minute")
+    config.addinivalue_line("markers", "slow: needs a long observation window")
+    config.addinivalue_line("markers", "disruptive: resets the board, injects a fault, or starts a download")
+
+
+def pytest_collection_modifyitems(config, items):
+    def rank(item):
+        marks = {m.name for m in item.iter_markers()}
+        # Unmarked tests sit with the fast ones rather than at either extreme:
+        # assuming a new test is a gate would give it authority to skip the run,
+        # and assuming it is slow would bury it.
+        bucket = min((ORDER[m] for m in marks if m in ORDER), default=ORDER["fast"])
+        disruptive = 1 if "disruptive" in marks else 0
+        return (bucket, disruptive, item.name)
+
+    items.sort(key=rank)
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed and "gate" in {m.name for m in item.iter_markers()}:
+        item.session.gate_failed = item.name
+
+
+def pytest_runtest_setup(item):
+    failed = getattr(item.session, "gate_failed", None)
+    if failed and "gate" not in {m.name for m in item.iter_markers()}:
+        pytest.skip(f"precondition {failed} failed — results below it would be unattributable")
 
 
 @pytest.fixture(scope="session")
@@ -147,11 +201,28 @@ class Sim:
 
     CONSOLE_BAUD = 115200
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, attempts=5):
         import serial  # local: only bench runs need pyserial
 
-        self.port = serial.serial_for_url(
-            f"rfc2217://{host}:{port}", baudrate=self.CONSOLE_BAUD, timeout=2
+        # Retried, because the proxy takes a moment to release a client that has
+        # just disconnected and refuses the next one meanwhile. Anyone who has
+        # been driving the simulator by hand leaves exactly that window open,
+        # and this fixture is session-scoped — so failing at open errors every
+        # test that touches the simulator, all of them reporting a serial
+        # problem rather than the one-second race that caused it.
+        last = None
+        for attempt in range(attempts):
+            try:
+                self.port = serial.serial_for_url(
+                    f"rfc2217://{host}:{port}", baudrate=self.CONSOLE_BAUD, timeout=2
+                )
+                return
+            except Exception as e:   # noqa: BLE001 — any open failure is worth a retry
+                last = e
+                time.sleep(2)
+        pytest.fail(
+            f"could not open the simulator console after {attempts} tries: {last}. "
+            "Another client is probably attached — the proxy takes one."
         )
 
     def command(self, text, settle=0.6):
@@ -189,12 +260,20 @@ class Sim:
         do with the device — and the failure looks like the firmware never
         learning the meter serial, which is a real defect elsewhere.
         """
-        for c in ("fault none", "gap 0", "identity ldn", "mode 3",
+        # Every field the simulator's `status` reports, not only the ones a test
+        # is about to change. TS-016 switches to `serial 16` and the next test
+        # then sees a longer telegram than it was written for — which is how a
+        # link-health check that passed at 96% failed on the following run for a
+        # reason that had nothing to do with the board.
+        for c in ("fault none", "gap 0", "identity ldn", "mode 3", "serial 8",
                   f"preamble {self.PREAMBLE} 0xFF"):
             self.command(c)
         state = self.status()
         assert state.get("fault") == "none", f"simulator still has {state.get('fault')} armed"
         assert state.get("identity") != "none", "simulator is emitting no identity"
+        assert state.get("serial") == "8", f"simulator serial length is {state.get('serial')}"
+        assert state.get("preamble", "").startswith(str(self.PREAMBLE)), \
+            f"simulator preamble is {state.get('preamble')}"
         return state
 
     def close(self):

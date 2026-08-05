@@ -36,6 +36,7 @@ def cycle_sizes(dut, seconds):
             if (m := re.search(r"cycle: (\d+) bytes", line))]
 
 
+@pytest.mark.fast
 @pytest.mark.xfail(
     reason="the firmware's line-setting probe rotates on absent framing, and a "
            "pattern has none by construction — the setting moves during the test",
@@ -78,6 +79,7 @@ def test_ts022_polarity_is_right(dut, sim):
 DELIVERY_TOLERANCE = 0.90
 
 
+@pytest.mark.gate
 def test_link_health(dut, sim):
     """The meter link is healthy enough to test through. A precondition, not a
     verification — it carries no test ID because it discharges no requirement.
@@ -109,6 +111,7 @@ def test_link_health(dut, sim):
     )
 
 
+@pytest.mark.fast
 def test_ts016_both_serial_lengths_decode(dut, sim):
     """TS-016 — FR-MTR-05. The 8- and 16-character meter serials both decode,
     with no reflash between them. A decoder that assumes one length is wrong
@@ -122,6 +125,8 @@ def test_ts016_both_serial_lengths_decode(dut, sim):
         assert best > 0, f"nothing decoded with serial {length} across {seen} cycles"
 
 
+@pytest.mark.slow
+@pytest.mark.disruptive
 def test_ts017_recovers_from_a_mid_frame_start(dut, sim):
     """TS-017 — FR-MTR-06. One transmission begins part-way through.
 
@@ -136,6 +141,8 @@ def test_ts017_recovers_from_a_mid_frame_start(dut, sim):
     assert best > 0, "no cycle recovered after a mid-frame start"
 
 
+@pytest.mark.slow
+@pytest.mark.disruptive
 def test_ts018_recovers_after_a_reset_mid_transmission(dut, sim):
     """TS-018 — FR-MTR-06. The case that happens on every real power-up: the
     device is energised by the meter, so it wakes into a transmission already in
@@ -148,6 +155,8 @@ def test_ts018_recovers_after_a_reset_mid_transmission(dut, sim):
     assert best > 0, "nothing decoded after a reset — a second power cycle should not be needed"
 
 
+@pytest.mark.fast
+@pytest.mark.disruptive
 def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     """TS-019 — FR-MTR-07, FR-MTR-08. One frame carries a bad checksum.
 
@@ -167,6 +176,8 @@ def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     ("silence 60", "no measurement is published"),
     ("fault noise 200", "a condition distinct from a decode failure is logged"),
 ])
+@pytest.mark.slow
+@pytest.mark.disruptive
 def test_ts042_ts044_quiet_and_noisy_lines(dut, sim, directive, expect):
     """TS-042 — FR-MTR-12, and TS-044 — FR-MTR-14.
 

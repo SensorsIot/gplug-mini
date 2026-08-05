@@ -52,6 +52,8 @@ def publish_ota(broker_host, mac, url):
     return topic
 
 
+@pytest.mark.fast
+@pytest.mark.disruptive
 def test_ts062_a_url_on_the_command_topic_starts_a_download(dut, broker_host, relay, dut_mac):
     """TS-062 — FR-OTA-01. A URL on the command topic begins a download.
 
@@ -67,6 +69,7 @@ def test_ts062_a_url_on_the_command_topic_starts_a_download(dut, broker_host, re
     print(f"\n  {line}")
 
 
+@pytest.mark.fast
 def test_ts062_neg_a_malformed_command_is_refused_and_said_so(dut, broker_host, relay, dut_mac):
     """TS-062 (negative) — FR-OTA-01, FR-OTA-02. A payload that is not a URL is
     refused, and the refusal is visible.
@@ -82,6 +85,7 @@ def test_ts062_neg_a_malformed_command_is_refused_and_said_so(dut, broker_host, 
     print(f"\n  {line}")
 
 
+@pytest.mark.slow
 def test_ts063_nothing_triggers_a_download_but_the_command(dut, broker_host, relay):
     """TS-063 — FR-OTA-02. No download without a command.
 
@@ -99,6 +103,8 @@ def test_ts063_nothing_triggers_a_download_but_the_command(dut, broker_host, rel
     print(f"\n  90 s with an unannounced image in the relay: no download")
 
 
+@pytest.mark.slow
+@pytest.mark.disruptive
 def test_ts069_decoding_continues_during_a_download(dut, broker_host, sim, relay, dut_mac):
     """TS-069 — FR-OTA-08. The meter loop keeps reading through a download.
 
@@ -119,6 +125,8 @@ def test_ts069_decoding_continues_during_a_download(dut, broker_host, sim, relay
     print(f"\n  {len(cycles)} cycle(s) reported while a download was in flight")
 
 
+@pytest.mark.fast
+@pytest.mark.disruptive
 def test_ts084_the_reset_reason_is_reported(dut):
     """TS-084 — FR-WDT-04. The reset reason is on the console after boot.
 

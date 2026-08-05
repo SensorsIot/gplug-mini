@@ -160,8 +160,35 @@ nothing outside the process.
 - **Verify the precondition, and if it fails record `not done`, never `failed`.**
   A failure claims you learned something about the requirement; with a broken
   baseline you learned nothing, and the next person hunts the wrong defect.
-- **Leave the rig as you found it.** A fault directive left set silently corrupts
-  every later test.
+- **Leave the rig as you found it, in every field — not only the one you
+  changed.** A restore that resets the fault but not the serial length leaves the
+  next test a longer telegram than it was written for, and that test fails for a
+  reason that has nothing to do with the device. Assert the restored state rather
+  than issuing the commands and assuming.
+
+## Run order
+
+A bench run costs minutes per test, so the order decides how long it takes to
+learn something. Three rules, in priority order:
+
+1. **Gates first, and a failed gate skips the rest.** A run that continues
+   through decode tests after the link was found broken produces results that
+   are all unattributable — every one fails for the same upstream reason, and
+   the report reads as a dozen defects instead of one.
+2. **Cheap before expensive.** Anything that can fail in twenty seconds should
+   fail before anything that takes ninety.
+3. **Disruptive last.** Tests that reset the board, inject a fault or start a
+   download leave the rig unsettled, and the quiet tests should not pay for the
+   recovery.
+
+Tests that prove a negative — *no download happens*, *nothing is published* —
+are the worst of both: they cost their whole window every time and can only ever
+confirm nothing. They go last.
+
+Enforce this in the harness rather than by keeping the file in a tidy order. In
+`testing/bench/` the markers are `gate`, `fast`, `slow` and `disruptive`, and
+`conftest.py` sorts on them; an unmarked test runs with the fast ones, because
+assuming a new test is a gate would give it authority to skip the run.
 
 Bench addresses are not written down. gPlug-mini uses **Workbench2**; discover it
 and confirm with `GET /api/info` before a session.
