@@ -329,30 +329,6 @@ tests:
   commit:
   when:
 
-- id: TS-024
-  verifies: [FR-AGG-01]
-  tier:     host
-  needs:    []
-  does:      Feed two frames separated by 1999 ms, then 2000 ms, then 2001 ms
-  expected:  No boundary at 1999 ms; boundary at 2000 ms and 2001 ms
-  procedure: ctest -R TS-024
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
-- id: TS-025
-  verifies: [FR-AGG-02]
-  tier:     host
-  needs:    []
-  does:      Feed a capture whose OBIS definitions and values fall in different frames
-  expected:  One set containing values from both frames
-  procedure: ctest -R TS-025
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
 - id: TS-026
   verifies: [FR-AGG-03]
   tier:     host
@@ -433,7 +409,7 @@ tests:
   expected:  Connection attempts continue throughout, at the capped backoff
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    needs wifi-ap-outage — unavailable
   commit:
   when:
 
@@ -457,7 +433,7 @@ tests:
   expected:  Intervals increase, then hold at 30 s ±2 s
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    needs wifi-ap-outage — unavailable
   commit:
   when:
 
@@ -469,7 +445,7 @@ tests:
   expected:  SoftAP appears within 5 s
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    needs button-gpio — unavailable
   commit:
   when:
 
@@ -593,36 +569,12 @@ tests:
   commit:
   when:
 
-- id: TS-046
-  verifies: [FR-HA-02]
-  tier:     bench
-  needs:    [board]
-  does:      Note `unique_id`s; reflash with a cleared NVS; reconnect
-  expected:  Identical `unique_id`s
-  procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
 - id: TS-047
   verifies: [FR-HA-03]
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Connect with no meter data
   expected:  No discovery topics
-  procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
-- id: TS-048
-  verifies: [FR-HA-04]
-  tier:     bench
-  needs:    [board, ha-bridge, mqtt-broker]
-  does:      Inspect discovery payloads in Home Assistant
-  expected:  Energy entities accepted by the Energy Dashboard
   procedure: P-METER
   status:    not done
   reason:    test not written
@@ -685,7 +637,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -697,7 +649,7 @@ tests:
   expected:  Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -709,7 +661,7 @@ tests:
   expected:  The configuration page is served
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -721,7 +673,7 @@ tests:
   expected:  Device boots normally
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    needs button-gpio — unavailable
   commit:
   when:
 
@@ -733,7 +685,7 @@ tests:
   expected:  Configuration survives
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -745,7 +697,7 @@ tests:
   expected:  Prior configuration intact
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -757,7 +709,7 @@ tests:
   expected:  The configuration page lists it
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -769,7 +721,7 @@ tests:
   expected:  Association succeeds within 10 s of entering the state
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -781,7 +733,7 @@ tests:
   expected:  Either it resolves and a session follows, or the portal states why it cannot
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -793,7 +745,7 @@ tests:
   expected:  Download begins within 5 s
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -805,7 +757,7 @@ tests:
   expected:  No download
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -817,7 +769,7 @@ tests:
   expected:  Download aborted, image not written
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -829,7 +781,7 @@ tests:
   expected:  The image is written to the inactive slot
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -841,7 +793,7 @@ tests:
   expected:  The image is never marked valid
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -853,7 +805,7 @@ tests:
   expected:  The image is marked valid once the broker session is established
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -865,19 +817,19 @@ tests:
   expected:  The previously valid image runs
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
 - id: TS-069
   verifies: [FR-OTA-08]
-  tier:     host
-  needs:    []
+  tier:     bench
+  needs:    [board, mqtt-broker, ota-relay]
   does:      Feed meter cycles throughout a download
   expected:  Decoding continues
-  procedure: ctest -R TS-069
+  procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -889,7 +841,7 @@ tests:
   expected:  Download aborted, partial image discarded
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -901,7 +853,7 @@ tests:
   expected:  The version shown matches the running firmware's version string
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    needs ha-bridge — unavailable
   commit:
   when:
 
@@ -913,7 +865,7 @@ tests:
   expected:  Indication matches §11.3
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -925,7 +877,7 @@ tests:
   expected:  Indication matches §11.3
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -937,7 +889,7 @@ tests:
   expected:  Indication matches §11.3
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -949,7 +901,7 @@ tests:
   expected:  Update pattern for the whole window
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -961,7 +913,7 @@ tests:
   expected:  Indication matches §11.3
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -973,7 +925,7 @@ tests:
   expected:  The stored configuration values are readable
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -985,7 +937,7 @@ tests:
   expected:  Device boots and enters Provisioning
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -997,19 +949,7 @@ tests:
   expected:  Configuration intact each time
   procedure: P-METER
   status:    not done
-  reason:    test not written
-  commit:
-  when:
-
-- id: TS-080
-  verifies: [FR-DEC-03]
-  tier:     host
-  needs:    []
-  does:      Decode a capture with a known true value
-  expected:  The published value equals the meter's value in the Appendix B unit
-  procedure: ctest -R TS-080
-  status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1021,7 +961,7 @@ tests:
   expected:  The device resets within the configured task-watchdog period (5 s)
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1033,19 +973,19 @@ tests:
   expected:  Device resets within the timeout and returns to `OPERATIONAL`
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
 - id: TS-083
   verifies: [FR-WDT-03]
-  tier:     host
-  needs:    []
+  tier:     bench
+  needs:    [board, mqtt-broker, ota-relay]
   does:      Feed no meter data for 30 min while connected; separately, run a full OTA
   expected:  No reset in either case
-  procedure: ctest -R TS-083
+  procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -1057,7 +997,7 @@ tests:
   expected:  Reset reason reported as watchdog
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1069,7 +1009,7 @@ tests:
   expected:  The reset reason is unchanged across all three
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    needs wifi-ap-outage — unavailable
   commit:
   when:
 
@@ -1105,7 +1045,7 @@ tests:
   expected:  Entity IDs unchanged; history continues
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    needs second-board — unavailable
   commit:
   when:
 
@@ -1117,7 +1057,7 @@ tests:
   expected:  Rejected, image not written
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -1129,7 +1069,7 @@ tests:
   expected:  Rejected, image not written
   procedure: P-OTA
   status:    not done
-  reason:    test not written
+  reason:    needs ota-relay — unavailable
   commit:
   when:
 
@@ -1141,7 +1081,7 @@ tests:
   expected:  The network advertises WPA2
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1153,7 +1093,7 @@ tests:
   expected:  No passphrase in any response body
   procedure: P-NETWORK
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1165,7 +1105,7 @@ tests:
   expected:  The WiFi passphrase is readable in plaintext
   procedure: P-TARGET
   status:    not done
-  reason:    test not written
+  reason:    the firmware does not implement this yet
   commit:
   when:
 
@@ -1177,7 +1117,7 @@ tests:
   expected:  The version string equals the tag
   procedure: tools/check-artefacts.sh
   status:    not done
-  reason:    test not written
+  reason:    tagged build; no tag on HEAD yet
   commit:
   when:
 
@@ -1188,11 +1128,10 @@ tests:
   does:      Build an untagged commit
   expected:  The version string includes the short commit hash
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:    
+  commit:    288f210
+  when:      2026-08-05T14:20Z
 - id: TS-096
   verifies: [FR-BLD-03]
   tier:     other
@@ -1200,11 +1139,10 @@ tests:
   does:      Inspect the production binary and the variant-selection mechanism
   expected:  Selection is a compile-time option; the production binary contains no capture data
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:    
+  commit:    288f210
+  when:      2026-08-05T14:20Z
 - id: TS-097
   verifies: [FR-BLD-04]
   tier:     other
@@ -1212,11 +1150,10 @@ tests:
   does:      Search the production binary for the embedded capture data
   expected:  Absent
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:    
+  commit:    288f210
+  when:      2026-08-05T14:20Z
 - id: TS-098
   verifies: [FR-BLD-05]
   tier:     other
@@ -1225,7 +1162,7 @@ tests:
   expected:  The version string carries the `-sim` suffix
   procedure: tools/check-artefacts.sh
   status:    not done
-  reason:    test not written
+  reason:    simulated build not produced by CI yet
   commit:
   when:
 
@@ -1237,7 +1174,7 @@ tests:
   expected:  Entities appear only under the test prefix
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    needs ha-bridge — unavailable
   commit:
   when:
 
@@ -1248,11 +1185,10 @@ tests:
   does:      Inspect `.github/workflows/`
   expected:  Both workflows trigger on `push`; the host job runs `ctest`
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status:    successful
+  reason:    
+  commit:    288f210
+  when:      2026-08-05T14:20Z
 - id: TS-101
   verifies: [FR-BLD-08]
   tier:     other
@@ -1260,7 +1196,66 @@ tests:
   does:      Push to a branch without a tag
   expected:  No release asset produced
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    
+  commit:    288f210
+  when:      2026-08-05T14:20Z
+- id: TS-003
+  verifies: [FR-AGG-02]
+  tier:     host
+  needs:    []
+  does:      Decodes a capture whose serial spans a General Block Transfer boundary
+  expected:  Both halves present - '4433' alone would mean no reassembly
+  procedure: ctest -R TS-003
+  status:    successful
+  reason:
+  commit:    288f210
+  when:      2026-08-05T14:05Z
+
+- id: TS-004
+  verifies: [FR-DEC-03]
+  tier:     host
+  needs:    []
+  does:      Decodes a capture with a known true value and its scaler
+  expected:  The value is scaled exactly once, by the caller
+  procedure: ctest -R TS-004
+  status:    successful
+  reason:
+  commit:    288f210
+  when:      2026-08-05T14:05Z
+
+- id: TS-005
+  verifies: [FR-DEC-04]
+  tier:     host
+  needs:    []
+  does:      Decodes a cumulative register above 16,777,216
+  expected:  The value is exact; float would quantise it
+  procedure: ctest -R TS-005
+  status:    successful
+  reason:
+  commit:    288f210
+  when:      2026-08-05T14:05Z
+
+- id: TS-006
+  verifies: [FR-AGG-01]
+  tier:     host
+  needs:    []
+  does:      Feeds frames separated by 1999 ms, then 2000 ms, then 2001 ms
+  expected:  No boundary at 1999 ms; a boundary at 2000 ms and 2001 ms
+  procedure: ctest -R TS-006
+  status:    successful
+  reason:
+  commit:    288f210
+  when:      2026-08-05T14:05Z
+
+- id: TS-008
+  verifies: [FR-HA-02, FR-HA-04]
+  tier:     host
+  needs:    []
+  does:      Builds the Home Assistant discovery payloads
+  expected:  unique_id and device_class are correct for every published entity
+  procedure: ctest -R TS-008
+  status:    successful
+  reason:
+  commit:    288f210
+  when:      2026-08-05T14:05Z

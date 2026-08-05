@@ -163,6 +163,13 @@ jobs:
           cp build/sdkconfig sdkconfig.generated
           ls -la firmware_v* coldflash/
 
+      # The `other` tier: properties no execution environment can observe, so
+      # they are checked against the artefact this job just produced. Runs here
+      # rather than in host-tests.yml because that job never builds firmware and
+      # so has nothing to inspect.
+      - name: Artefact checks
+        run: tools/check-artefacts.sh coldflash
+
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-v${{ steps.plan.outputs.version }}

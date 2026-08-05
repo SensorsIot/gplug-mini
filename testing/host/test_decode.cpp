@@ -119,7 +119,7 @@ void serial_length(const char* fixture, size_t expected_len, const char* expecte
   check(serial->text == expected, "serial matches the published value exactly");
 }
 
-// TS-003 — FR-AGG-01. The 8-character serial straddles a General Block
+// TS-003 — FR-AGG-02. The 8-character serial straddles a General Block
 // Transfer boundary: '4433' ends one block and '7811' begins the next. Reading
 // it whole is proof the library reassembled; a frame-by-frame decoder returns
 // '4433' and reports no error at all.
