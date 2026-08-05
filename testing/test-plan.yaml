@@ -357,9 +357,9 @@ tests:
   expected:  Both decode with no reflash between them - 6 objects per cycle either way
   procedure: P-METER
   status:    successful
-  reason:    passes only with the bench lead-in; without it nothing decodes at all (TS-025)
-  commit:    a03cead
-  when:      2026-08-05T18:40Z
+  reason:    Both serial lengths decoded 6 objects each, no reflash between them
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-017
   verifies: [FR-MTR-06]
@@ -368,11 +368,10 @@ tests:
   does:      Simulator told `fault start-mid-frame` - one transmission begins partway through, bench lead-in in place
   expected:  A later cycle decodes; the disturbed one costs only itself
   procedure: P-METER
-  status:    not done
-  reason:    test not written; and the rig has never yet delivered one complete
-             mode-3 telegram, so whether the device decodes a clean one is unknown
-  commit:
-  when:
+  status:    successful
+  reason:    Best cycle decoded 6 objects over 8 cycles after a mid-frame start
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-018
   verifies: [FR-MTR-06]
@@ -382,9 +381,9 @@ tests:
   expected:  The first complete cycle after boot decodes; no second power cycle needed
   procedure: P-METER
   status:    successful
-  reason:    passes only with the bench lead-in; without it nothing decodes at all (TS-025)
-  commit:    a03cead
-  when:      2026-08-05T18:40Z
+  reason:    Best cycle decoded 6 objects over 8 cycles after a reset mid-transmission
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-019
   verifies: [FR-MTR-07, FR-MTR-08]
@@ -393,10 +392,10 @@ tests:
   does:      Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
   expected:  Frame 2 discarded and counted; frames 1, 3 and 4 still decode
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    No publish during the corrupted cycle
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-020
   verifies: [NFR-MTR-01]
@@ -670,10 +669,10 @@ tests:
   does:      Simulator `silence 60`
   expected:  WiFi and the broker session hold; no measurement is published
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    Nothing published while the line was silent
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-043
   verifies: [FR-MTR-13]
@@ -694,10 +693,10 @@ tests:
   does:      Simulator `fault noise 200`, then silence
   expected:  A condition distinct from a decode failure is logged
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
+  status:    successful
+  reason:    Noise reported on 2 lines, distinct from silence
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-045
   verifies: [FR-HA-01]
@@ -922,10 +921,10 @@ tests:
   does:      Run 24 h with a newer release published
   expected:  No download
   procedure: P-OTA
-  status:    not done
-  reason:    the firmware does not implement this yet
-  commit:
-  when:
+  status:    successful
+  reason:    90 s with an unannounced image in the relay produced no download
+  commit:    2d27604
+  when:      2026-08-05T21:20Z
 
 - id: TS-064
   verifies: [FR-OTA-03]
