@@ -44,8 +44,7 @@ struct Value {
   bool numeric{ false };
 };
 
-std::vector<Value> decode(const char* fixture) {
-  std::vector<uint8_t> bytes = read_hex(fixture);   // parse() takes a mutable span
+std::vector<Value> decode_bytes(std::vector<uint8_t> bytes) {   // parse() takes a mutable span
   static std::vector<Value> out;          // static: the callback is a plain function
   out.clear();
 
@@ -72,6 +71,24 @@ std::vector<Value> decode(const char* fixture) {
   return out;
 }
 
+std::vector<Value> decode(const char* fixture) {
+  return decode_bytes(read_hex(fixture));
+}
+
+// Decode a capture as if reception began part-way through it. This is not an
+// edge case: the device is energised by the meter it reads, so on every power
+// cycle it wakes into the middle of a transmission and the opening frame is
+// already gone (interface spec §4.1).
+std::vector<Value> decode_from_offset(const char* fixture, size_t offset) {
+  std::vector<uint8_t> bytes = read_hex(fixture);
+  if (offset >= bytes.size()) {
+    std::fprintf(stderr, "offset %zu past end of %zu-byte fixture\n", offset, bytes.size());
+    std::exit(2);
+  }
+  bytes.erase(bytes.begin(), bytes.begin() + static_cast<long>(offset));
+  return decode_bytes(std::move(bytes));
+}
+
 const Value* find(const std::vector<Value>& vs, const char* obis) {
   for (const auto& v : vs) if (v.obis == obis) return &v;
   return nullptr;
@@ -88,7 +105,7 @@ const Value* find_identity(const std::vector<Value>& values) {
   return nullptr;
 }
 
-// TS-HOST-01 — FR-MTR-05. Both serial forms are real, from the same meter model.
+// TS-001 / TS-002 — FR-MTR-05. Both serial forms are real, from the same meter model.
 // A decoder that assumes one length, or one OBIS code, is wrong half the time —
 // and wrong by finding nothing, which reads as a quiet meter rather than a bug.
 void serial_length(const char* fixture, size_t expected_len, const char* expected) {
@@ -102,7 +119,7 @@ void serial_length(const char* fixture, size_t expected_len, const char* expecte
   check(serial->text == expected, "serial matches the published value exactly");
 }
 
-// TS-HOST-02 — FR-AGG-01. The 8-character serial straddles a General Block
+// TS-003 — FR-AGG-01. The 8-character serial straddles a General Block
 // Transfer boundary: '4433' ends one block and '7811' begins the next. Reading
 // it whole is proof the library reassembled; a frame-by-frame decoder returns
 // '4433' and reports no error at all.
@@ -114,7 +131,7 @@ void block_reassembly(const char* fixture) {
   check(serial->text == "44337811", "both halves present — '4433' alone means no reassembly");
 }
 
-// TS-HOST-03 — FR-DEC-03. The library hands over the meter's scaler beside the
+// TS-004 — FR-DEC-03. The library hands over the meter's scaler beside the
 // raw bytes and does not apply it behind the caller's back, so scaling happens
 // exactly once: in whoever reads it.
 void scaling_applied_once(const char* fixture) {
@@ -127,7 +144,7 @@ void scaling_applied_once(const char* fixture) {
   check(power->scaler == 0, "this meter sends scaler 0 — raw and scaled coincide");
 }
 
-// TS-HOST-04 — FR-DEC-04. float has a 24-bit mantissa and is exact only to
+// TS-005 — FR-DEC-04. float has a 24-bit mantissa and is exact only to
 // 16,777,216. A lifetime energy total in Wh passes that at 16.8 MWh, and Home
 // Assistant derives consumption from differences between totals — so a total
 // that quantises invents consumption that never happened.
@@ -149,6 +166,23 @@ void energy_needs_integers(const char* fixture) {
         "float loses this value — cumulative registers must stay integers");
 }
 
+// TS-009 / TS-010 — FR-MTR-06. Reception begins inside a frame, which
+// is the ordinary case rather than a fault: the device is energised by the
+// meter, so it wakes into a transmission already in progress.
+//
+// The identity is deliberately not asserted here. The meter sends it once per
+// telegram, so a cycle that began after it went past cannot contain it, and no
+// decoder can recover what was never received — losing that one cycle is the
+// correct cost of a mid-burst start, not a defect. What must hold is that the
+// bytes which did arrive still decode, so the next complete cycle is whole.
+// Whether the device actually gets a whole next cycle is a timing property of
+// the receive path, which only the bench can see (TS-017, TS-018).
+void mid_burst_recovery(const char* fixture, size_t offset) {
+  const auto values = decode_from_offset(fixture, offset);
+  printf("       started %zu bytes in, decoded %zu value(s)\n", offset, values.size());
+  check(!values.empty(), "alignment recovered — the remaining frames still decode");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -162,6 +196,8 @@ int main(int argc, char** argv) {
   else if (name == "reassembly") block_reassembly(fixture);
   else if (name == "scaling")    scaling_applied_once(fixture);
   else if (name == "energy")     energy_needs_integers(fixture);
+  else if (name == "midburst17") mid_burst_recovery(fixture, 17);
+  else if (name == "midburst")   mid_burst_recovery(fixture, argc > 3 ? std::stoul(argv[3]) : 17);
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 
   printf("%s: %d failure(s)\n", name.c_str(), failures);

@@ -45,16 +45,23 @@ set(FIXTURES ${CMAKE_CURRENT_SOURCE_DIR}/fixtures)
 
 # One CTest entry per case, so a failure names the property that broke rather
 # than "the decode test".
-add_test(NAME TS-HOST-01a.serial-16-chars
+add_test(NAME TS-001.serial-16-chars
          COMMAND test_decode serial16 ${FIXTURES}/e450_serial16.hex)
-add_test(NAME TS-HOST-01b.serial-8-chars
+add_test(NAME TS-002.serial-8-chars
          COMMAND test_decode serial8 ${FIXTURES}/e450_serial8.hex)
-add_test(NAME TS-HOST-02.block-reassembly
+add_test(NAME TS-003.block-reassembly
          COMMAND test_decode reassembly ${FIXTURES}/e450_serial8.hex)
-add_test(NAME TS-HOST-03.scaling-applied-once
+add_test(NAME TS-004.scaling-applied-once
          COMMAND test_decode scaling ${FIXTURES}/e450_serial8.hex)
-add_test(NAME TS-HOST-04.energy-needs-integers
+add_test(NAME TS-005.energy-needs-integers
          COMMAND test_decode energy ${FIXTURES}/e450_serial8.hex)
-add_test(NAME TS-HOST-05.cycle-boundary COMMAND test_cores cycle)
-add_test(NAME TS-HOST-06.obis-mapping   COMMAND test_cores obis)
-add_test(NAME TS-HOST-07.discovery-payloads COMMAND test_cores discovery)
+# FR-MTR-06. Two offsets, because they lose different things: 17 bytes in is
+# inside the first frame's payload, 200 in has lost that frame entirely.
+add_test(NAME TS-009.mid-burst-recovery
+         COMMAND test_decode midburst ${FIXTURES}/e450_serial8.hex 17)
+add_test(NAME TS-010.mid-burst-later
+         COMMAND test_decode midburst ${FIXTURES}/e450_serial8.hex 200)
+
+add_test(NAME TS-006.cycle-boundary COMMAND test_cores cycle)
+add_test(NAME TS-007.obis-mapping   COMMAND test_cores obis)
+add_test(NAME TS-008.discovery-payloads COMMAND test_cores discovery)

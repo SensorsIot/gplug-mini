@@ -22,7 +22,7 @@ void check(bool ok, const char* what) {
   if (!ok) ++failures;
 }
 
-// TS-HOST-05 — FR-AGG-01. The boundary is a gap of at least 2000 ms with
+// TS-006 — FR-AGG-01. The boundary is a gap of at least 2000 ms with
 // something buffered. Asserted either side of the threshold, because a rule
 // tested only well inside its range passes with the comparison inverted.
 void cycle_boundary() {
@@ -35,7 +35,7 @@ void cycle_boundary() {
   check(!cycle_ended(999999, 0, 0), "silence with an empty buffer is not a cycle");
 }
 
-// TS-HOST-06 — FR-DEC-04, FR-MTR-09, FR-HA-05. What the map must get right:
+// TS-007 — FR-DEC-04, FR-MTR-09, FR-HA-05. What the map must get right:
 // energy is cumulative, power is not, the identity lives under either of two
 // codes, and an unknown code returns nothing rather than a placeholder.
 void obis_mapping() {
@@ -56,7 +56,7 @@ void obis_mapping() {
         "an unmapped code returns nothing — absent and zero are different facts");
 }
 
-// TS-HOST-07 — FR-HA-02, FR-HA-04. The two properties that decide whether an
+// TS-008 — FR-HA-02, FR-HA-04. The two properties that decide whether an
 // entity is usable rather than merely created: the Energy Dashboard requires
 // energy sensors to carry device_class energy and state_class total_increasing,
 // and unique_id must key on the meter serial so history survives replacing the
