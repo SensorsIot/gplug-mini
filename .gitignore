@@ -8,6 +8,13 @@ managed_components/
 
 # Host-tier build
 build-host/
+
+# Bench-tier test runner. pytest writes these beside the sources it imports, and
+# they carry the interpreter and pytest version in the name — so they churn on
+# every run and conflict between machines.
+__pycache__/
+*.pyc
+.pytest_cache/
 *.o
 *.a
 
