@@ -137,7 +137,7 @@ Four ESP-IDF 6 consequences apply and are silent until a build fails:
 - **cJSON is not bundled.** Home Assistant discovery payloads are JSON, so
   `espressif/cjson` is a required managed component.
 - **mDNS is not bundled.** A broker address entered as `homeassistant.local`
-  cannot resolve without `espressif/mdns`. See FR-CFG-04.
+  cannot resolve without `espressif/mdns`. See FR-PRV-08.
 - Adding `idf_component.yml` to a configured build tree does nothing until the
   build directory is removed or `reconfigure` is run.
 
@@ -252,9 +252,9 @@ closed.
 |---|---|---|---|
 | WiFi does not reach the meter cabinet | Medium | Blocks deployment entirely | Explicit field test (§22.1). No firmware mitigation exists; the answer is an access point or an external antenna |
 | Real frames differ from published captures | Medium | Decoder rework late | Decoding is proven against published captures before hardware; a real capture becomes a fixture in Phase 3 |
-| Meter serial length differs from the assumption | Medium | Decoder finds no blocks and **fails silently** | Treated as a parameter, not a constant (FR-MTR-05); logged as a distinct condition (FR-ERR-03) |
+| Meter serial length differs from the assumption | Medium | Decoder finds no blocks and **fails silently** | Treated as a parameter, not a constant (FR-MTR-05); logged as a distinct condition (FR-MTR-14) |
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
-| DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-CFG-03); decryption itself is out of scope |
+| DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-MTR-11); decryption itself is out of scope |
 | Bad firmware reaches the device | Low | Physical visit required | Rollback on failure to reach the broker (FR-OTA-05); manual trigger only (FR-OTA-02) |
 
 ### 4.2 Assumptions
@@ -288,7 +288,7 @@ Recorded so a later reader sees a decision rather than an omission.
 | ESP-IDF | 6.0.2 | D-P4 |
 | `esphome/dlms_parser` | ^1.2.0, Apache-2.0 | D-D1. Third-party, not vendor-supported |
 | `espressif/cjson` | latest | Not bundled in IDF 6 |
-| `espressif/mdns` | latest | Only if `.local` broker addresses are supported — FR-CFG-04 |
+| `espressif/mdns` | latest | Only if `.local` broker addresses are supported — FR-PRV-08 |
 | Home Assistant | any with MQTT discovery | External |
 
 ---
@@ -304,14 +304,14 @@ and decides when that set is complete enough to publish.
 
 ### 5.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-AGG-01** | Must | The device shall treat a gap of more than 2000 ms between received meter frames as the end of a transmission cycle. | `[user]` D-T2 |
-| **FR-AGG-02** | Must | The device shall assemble a single measurement set from all frames received within one cycle. | `[derived]` |
-| **FR-AGG-03** | Must | The device shall publish a measurement set exactly once per cycle boundary. | `[derived]` |
-| **FR-AGG-04** | Must | When a register appears more than once within one cycle, the device shall retain the first occurrence and discard later ones. | `[user]` interface spec §5.3 |
-| **FR-AGG-05** | Must | When no MQTT session is established at a cycle boundary, the device shall discard the measurement set without retaining it. | `[user]` D-H4 |
-| **FR-AGG-06** | Must | The device shall discard a measurement set containing no decoded values. | `[derived]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-AGG-01** | Must | The device shall treat a gap of more than 2000 ms between received meter frames as the end of a transmission cycle. | Feed two frames separated by 1999 ms, then 2000 ms, then 2001 ms | No boundary at 1999 ms; boundary at 2000 ms and 2001 ms | A boundary fires while frames are still arriving | `[user]` D-T2 |
+| **FR-AGG-02** | Must | The device shall assemble a single measurement set from all frames received within one cycle. | Feed a capture whose OBIS definitions and values fall in different frames | One set containing values from both frames | Values from only the first frame | `[derived]` |
+| **FR-AGG-03** | Must | The device shall publish a measurement set exactly once per cycle boundary. | Feed one complete cycle | Exactly one publish call | Two publishes for one cycle | `[derived]` |
+| **FR-AGG-04** | Must | When a register appears more than once within one cycle, the device shall retain the first occurrence and discard later ones. | Feed a capture with a register in two blocks and differing values | The first value is retained | The later value overwrites the earlier | `[user]` interface spec §5.3 |
+| **FR-AGG-05** | Must | When no MQTT session is established at a cycle boundary, the device shall discard the measurement set without retaining it. | Broker stopped; feed a complete cycle | Set discarded, no queue growth | Memory growth across cycles; replay on reconnect | `[user]` D-H4 |
+| **FR-AGG-06** | Must | The device shall discard a measurement set containing no decoded values. | Feed 20 bytes of noise, then silence | No publish | An empty or all-zero payload published | `[derived]` |
 
 ### 5.3 Decision logic
 
@@ -328,31 +328,10 @@ is lost by design (D-H4) — the next cycle supersedes it within seconds, and
 energy counters are cumulative, so Home Assistant reconstructs consumption from
 whichever counter value arrives next.
 
-### 5.4 Verification contracts
+### 5.4 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-AGG-01 | Feed two frames separated by 1999 ms, then 2000 ms, then 2001 ms | No boundary at 1999 ms; boundary at 2000 ms and 2001 ms | A boundary fires while frames are still arriving | host |
-| FR-AGG-02 | Feed a capture whose OBIS definitions and values fall in different frames | One set containing values from both frames | Values from only the first frame | host |
-| FR-AGG-03 | Feed one complete cycle | Exactly one publish call | Two publishes for one cycle | host |
-| FR-AGG-04 | Feed a capture with a register in two blocks and differing values | The first value is retained | The later value overwrites the earlier | host |
-| FR-AGG-05 | Broker stopped; feed a complete cycle | Set discarded, no queue growth | Memory growth across cycles; replay on reconnect | bench |
-| FR-AGG-06 | Feed 20 bytes of noise, then silence | No publish | An empty or all-zero payload published | host |
-
-**FR-AGG-01 is a publish-cadence rule, not a decode trigger.** `dlms_parser`
-performs the reassembly itself: the meter sends a DLMS General Block Transfer
-sequence — numbered blocks with `0x40` for *more follow* and `0xC0` for *last* —
-and the library concatenates them before parsing. A published capture proves it
-is not optional: an 8-character meter serial is split across a block boundary,
-`4433` ending one block and `7811` beginning the next, and is unreadable to
-anything decoding frame by frame.
-
-The silence gap therefore decides only *when to hand the buffer to the parser*.
-Two consequences: the value must exceed the largest gap the meter leaves between
-blocks of one transmission, which is not knowable from a capture without
-timestamps and is a Phase 3 measurement; and a transmission is complete when the
-last-block flag arrives, so the gap must never be treated as the authority on
-cycle boundaries.
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ### 5.5 Constants
 
@@ -372,16 +351,19 @@ on "what is the device doing right now" derives from this state machine.
 
 ### 6.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-SUP-01** | Must | On boot with no stored WiFi credentials, the device shall enter Provisioning. | `[user]` D-C3 |
-| **FR-SUP-02** | Must | On boot with stored WiFi credentials, the device shall attempt to connect to the stored network. | `[user]` D-C3 |
-| **FR-SUP-03** | Must | On loss of the WiFi association while credentials are stored, the device shall retry connection indefinitely. | `[user]` D-C4 |
-| **FR-SUP-04** | Must | The device shall not enter Provisioning as a consequence of failing to connect to a stored network. | `[user]` D-C4 |
-| **FR-SUP-05** | Must | Successive reconnection attempts shall use an increasing interval capped at 30 s. | `[derived]` D-C4 |
-| **FR-SUP-06** | Must | The device shall enter Provisioning when the button is held for 5 s while running. | `[user]` D-C3 |
-| **FR-SUP-07** | Must | The device shall leave Provisioning and resume connecting 300 s after entering it, when no credentials have been submitted. | `[derived]` D-C3 |
-| **FR-SUP-08** | Must | The device shall continue decoding meter frames in every state. | `[derived]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-SUP-01** | Must | On boot with no stored WiFi credentials, the device shall enter Provisioning. | Erase NVS, boot | SoftAP appears within 10 s | Device connects to any prior network | `[user]` D-C3 |
+| **FR-SUP-02** | Must | On boot with stored WiFi credentials, the device shall attempt to connect to the stored network. | Credentials stored, boot | Association attempt to the stored SSID | SoftAP appears | `[user]` D-C3 |
+| **FR-SUP-03** | Must | On loss of the WiFi association while credentials are stored, the device shall retry connection indefinitely. |  |  |  | `[user]` D-C4 |
+| **FR-SUP-04** | Must | The device shall not enter Provisioning as a consequence of failing to connect to a stored network. | `OPERATIONAL`; power off the access point for 10 min | Device retries throughout | **SoftAP appears at any point** | `[user]` D-C4 |
+| **FR-SUP-05** | Must | Successive reconnection attempts shall use an increasing interval capped at 30 s. | Deny association repeatedly; log attempt times | Intervals increase, then hold at 30 s ±2 s | Interval exceeds 30 s, or attempts stop | `[derived]` D-C4 |
+| **FR-SUP-06** | Must | The device shall enter Provisioning when the button is held for 5 s while running. | `OPERATIONAL`; hold the button 5 s | SoftAP appears within 5 s | Device reboots; download mode entered | `[user]` D-C3 |
+| **FR-SUP-07** | Must | The device shall leave Provisioning and resume connecting 300 s after entering it, when no credentials have been submitted. | Enter Provisioning with credentials stored; wait 300 s | Returns to `CONNECTING` | Remains in AP mode indefinitely | `[derived]` D-C3 |
+| **FR-SUP-08** | Must | The device shall continue decoding meter frames in every state. | Broker stopped; feed a cycle | Decode occurs and is logged | Ingestion stops while offline | `[derived]` |
+| **FR-SUP-09** | Must | The device shall treat WiFi SSID, WiFi passphrase and broker host as required, and enter Provisioning when any is absent. |  |  |  | `[derived]` |
+| **FR-SUP-10** | Must | The device shall accept an empty MQTT username and password. |  |  |  | `[derived]` |
+| **NFR-SUP-01** | Must | The device shall re-establish an MQTT session within 60 s of the broker becoming reachable. |  |  |  | `[pack:esp32]` |
 
 ### 6.3 State model (normative)
 
@@ -426,55 +408,10 @@ Excluded by construction: `mqtt_up` outside `LINKED` (the client runs only in
 `LINKED` and above); `creds_saved` outside `PROVISIONING` (the portal is the only
 writer).
 
-### 6.4 Verification contracts
+### 6.4 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-SUP-01 | Erase NVS, boot | SoftAP appears within 10 s | Device connects to any prior network | bench |
-| FR-SUP-02 | Credentials stored, boot | Association attempt to the stored SSID | SoftAP appears | bench |
-| FR-SUP-04 | `OPERATIONAL`; power off the access point for 10 min | Device retries throughout | **SoftAP appears at any point** | bench |
-| FR-SUP-05 | Deny association repeatedly; log attempt times | Intervals increase, then hold at 30 s ±2 s | Interval exceeds 30 s, or attempts stop | bench |
-| FR-SUP-06 | `OPERATIONAL`; hold the button 5 s | SoftAP appears within 5 s | Device reboots; download mode entered | bench |
-| FR-SUP-07 | Enter Provisioning with credentials stored; wait 300 s | Returns to `CONNECTING` | Remains in AP mode indefinitely | bench |
-| FR-SUP-08 | Broker stopped; feed a cycle | Decode occurs and is logged | Ingestion stops while offline | bench |
-
-Full contract for the requirement that most defines the product:
-
-```yaml
-id: FR-SUP-04
-verification:
-  preconditions:
-    - The DUT is in OPERATIONAL with a stored SSID.
-    - The workbench access point is serving that SSID.
-  stimulus:
-    - Disable the access point.
-    - Keep it unavailable for 10 minutes.
-    - Re-enable it.
-  expected_observations:
-    - The DUT remains in CONNECTING for the whole outage.
-    - No SoftAP is broadcast at any point during the outage.
-    - The DUT re-associates and re-establishes MQTT within 60 s of the AP
-      returning.
-  timing: 60 s from access point availability to MQTT session
-  tolerance: +30 s
-  prohibited_outcomes:
-    - The DUT broadcasts its provisioning SSID.
-    - The DUT restarts.
-    - Stored credentials are erased.
-    - Recovery requires a button press.
-  tier: bench
-  evidence:
-    - Continuous WiFi scan log covering the outage, showing no gPlug SSID.
-    - Reset reason after the test.
-    - Broker connection log with timestamps.
-  cleanup:
-    - Restore the access point.
-    - Confirm the DUT returns to OPERATIONAL.
-```
-
----
-
-# Part B — Interfaces (L1)
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 7. Meter Interface
 
@@ -499,6 +436,10 @@ level shifter. Traffic is one-way.
 | **FR-MTR-09** | Must | The device shall map decoded OBIS codes to the measurement labels of Appendix B. | Feed a published capture | Every register maps to the right label, unit and scale | A value mapped to the wrong label | `[derived]` D-H2 |
 | **FR-MTR-10** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | Feed a capture carrying each object, then one carrying neither | Identity read from whichever is present; with neither, discovery defers | The wrong object preferred when both are present | `[code]` published captures |
 | **NFR-MTR-01** | Must | The receive path shall buffer at least 512 bytes of a single burst without loss. | Feed a 491-byte telegram, the longest measured in the reference captures | No byte dropped | Any byte dropped | `[proposed]` interface spec §2.2 |
+| **FR-MTR-11** | Must | The device shall store a DLMS key when supplied, and operate without one when it is absent. |  |  |  | `[user]` D-C1 |
+| **FR-MTR-12** | Must | The device shall continue operating in every state when the meter produces no data. |  |  |  | `[derived]` |
+| **FR-MTR-13** | Must | The device shall count discarded frames and make the count available on the serial console. |  |  |  | `[derived]` |
+| **FR-MTR-14** | Must | The device shall log a distinct condition when a burst is received but no block is found. |  |  |  | `[code]` published captures |
 
 FR-MTR-04 is a safety property, not a convenience: the customer interface is a
 metrologically sealed device, and transmitting on it is outside what a consumer
@@ -515,9 +456,9 @@ framing, OBIS-addressed. Full detail in interface spec §4 and §5; not restated
 |---|---|
 | No bytes received | No publication. The device remains in its network state and reports nothing about the meter |
 | Continuous noise, no valid frame | Frames discarded; no publication (FR-AGG-06) |
-| CRC failures | Frame discarded (FR-MTR-07); counted for diagnostics (FR-ERR-02) |
+| CRC failures | Frame discarded (FR-MTR-07); counted for diagnostics (FR-MTR-13) |
 | Burst exceeds the buffer | Excess dropped, condition logged; the partial set is still decoded |
-| Decoder finds no blocks | Distinct logged condition — the signature of a wrong serial length (FR-ERR-03) |
+| Decoder finds no blocks | Distinct logged condition — the signature of a wrong serial length (FR-MTR-14) |
 
 ### 7.5 Tests
 
@@ -536,17 +477,17 @@ without configuration on the Home Assistant side. The peer is the MQTT broker.
 
 ### 8.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-HA-01** | Must | The device shall publish a retained MQTT discovery configuration for each entity of Appendix B. | `[user]` D-H1 |
-| **FR-HA-02** | Must | The device shall derive each entity's `unique_id` from the meter serial. | `[user]` D-H3 |
-| **FR-HA-03** | Must | The device shall defer publishing discovery configurations until a meter serial has been decoded. | `[derived]` D-H3 |
-| **FR-HA-04** | Must | The device shall publish energy entities with `device_class: energy` and `state_class: total_increasing`, and power entities with `device_class: power` and `state_class: measurement`. | `[user]` D-H2 |
-| **FR-HA-05** | Must | The device shall publish only measurements present in the decoded cycle. | `[user]` D-D3 |
-| **FR-HA-06** | Must | The device shall register a last-will message marking itself unavailable, and publish availability on connection. | `[pack:esp32]` |
-| **FR-HA-07** | Must | The device shall not retain measurement state messages. | `[derived]` |
-| **FR-HA-08** | Must | The device shall derive its MQTT client identifier from its MAC address. | `[user]` D-H3 |
-| **NFR-HA-01** | Must | A measurement set shall be published within 2 s of the cycle boundary that produced it. | `[derived]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-HA-01** | Must | The device shall publish a retained MQTT discovery configuration for each entity of Appendix B. | Fresh broker; connect the DUT; feed one cycle | One retained config per Appendix B entity present in the cycle | Configs for absent registers | `[user]` D-H1 |
+| **FR-HA-02** | Must | The device shall derive each entity's `unique_id` from the meter serial. | Note `unique_id`s; reflash with a cleared NVS; reconnect | Identical `unique_id`s | IDs change across reflash | `[user]` D-H3 |
+| **FR-HA-03** | Must | The device shall defer publishing discovery configurations until a meter serial has been decoded. | Connect with no meter data | No discovery topics | Discovery published with a placeholder serial | `[derived]` D-H3 |
+| **FR-HA-04** | Must | The device shall publish energy entities with `device_class: energy` and `state_class: total_increasing`, and power entities with `device_class: power` and `state_class: measurement`. | Inspect discovery payloads in Home Assistant | Energy entities accepted by the Energy Dashboard | An energy entity rejected as unsuitable | `[user]` D-H2 |
+| **FR-HA-05** | Must | The device shall publish only measurements present in the decoded cycle. | Feed a cycle missing `U2` | No `U2` in the payload | `U2` present as 0 or a stale value | `[user]` D-D3 |
+| **FR-HA-06** | Must | The device shall register a last-will message marking itself unavailable, and publish availability on connection. | Cut DUT power while connected | Broker marks it unavailable within the keepalive window | Entity stays "available" indefinitely | `[pack:esp32]` |
+| **FR-HA-07** | Must | The device shall not retain measurement state messages. | Subscribe fresh after the DUT is offline | No measurement state delivered | A retained stale reading delivered | `[derived]` |
+| **FR-HA-08** | Must | The device shall derive its MQTT client identifier from its MAC address. |  |  |  | `[user]` D-H3 |
+| **NFR-HA-01** | Must | A measurement set shall be published within 2 s of the cycle boundary that produced it. | Timestamp cycle boundary and broker receipt | Delta ≤ 2 s | Delta exceeds 2 s under normal load | `[derived]` |
 
 FR-HA-05 and FR-HA-07 are the same concern seen twice. A retained measurement, or
 a zero standing in for an absent register, is indistinguishable from a real
@@ -573,20 +514,10 @@ operational topics are keyed by MAC so two devices never collide (D-H3).
 | Meter serial not yet known | No discovery, no state (FR-HA-03) |
 | Credentials rejected | Retry as for any session failure; no fallback to Provisioning (FR-SUP-04) |
 
-### 8.5 Verification contracts
+### 8.5 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-HA-01 | Fresh broker; connect the DUT; feed one cycle | One retained config per Appendix B entity present in the cycle | Configs for absent registers | bench |
-| FR-HA-02 | Note `unique_id`s; reflash with a cleared NVS; reconnect | Identical `unique_id`s | IDs change across reflash | bench |
-| FR-HA-03 | Connect with no meter data | No discovery topics | Discovery published with a placeholder serial | bench |
-| FR-HA-04 | Inspect discovery payloads in Home Assistant | Energy entities accepted by the Energy Dashboard | An energy entity rejected as unsuitable | bench |
-| FR-HA-05 | Feed a cycle missing `U2` | No `U2` in the payload | `U2` present as 0 or a stale value | host |
-| FR-HA-06 | Cut DUT power while connected | Broker marks it unavailable within the keepalive window | Entity stays "available" indefinitely | bench |
-| FR-HA-07 | Subscribe fresh after the DUT is offline | No measurement state delivered | A retained stale reading delivered | bench |
-| NFR-HA-01 | Timestamp cycle boundary and broker receipt | Delta ≤ 2 s | Delta exceeds 2 s under normal load | bench |
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 9. Provisioning Portal
 
@@ -597,16 +528,17 @@ available. The peer is a human with a web browser.
 
 ### 9.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-PRV-01** | Must | In Provisioning the device shall operate a WPA2-protected SoftAP. | `[user]` D-C6 |
-| **FR-PRV-02** | Must | The SoftAP passphrase shall be derived from the device MAC address by a documented rule. | `[user]` D-C6 |
-| **FR-PRV-03** | Must | The device shall redirect DNS queries on the SoftAP to its own configuration page. | `[pack:esp32]` |
-| **FR-PRV-04** | Must | The device shall sample the button only after boot completes. | `[derived]` interface spec §3 |
-| **FR-PRV-05** | Must | The device shall persist submitted configuration to NVS before leaving Provisioning. | `[derived]` D-C3 |
-| **FR-PRV-06** | Must | The device shall retain previously stored configuration when Provisioning ends without a submission. | `[derived]` |
-| **FR-PRV-07** | Should | The configuration page shall list the WiFi networks the device can see. | `[pack:esp32]` |
-| **NFR-PRV-01** | Must | The SoftAP shall accept associations within 10 s of entering Provisioning. | `[derived]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-PRV-01** | Must | In Provisioning the device shall operate a WPA2-protected SoftAP. | Enter Provisioning; attempt association with the derived passphrase, then a wrong one | Correct passphrase associates; wrong one rejected | An open network is offered | `[user]` D-C6 |
+| **FR-PRV-02** | Must | The SoftAP passphrase shall be derived from the device MAC address by a documented rule. | Enter Provisioning; attempt association with the derived passphrase, then a wrong one | Correct passphrase associates; wrong one rejected | An open network is offered | `[user]` D-C6 |
+| **FR-PRV-03** | Must | The device shall redirect DNS queries on the SoftAP to its own configuration page. | Associate and request any hostname | The configuration page is served | The request reaches the internet | `[pack:esp32]` |
+| **FR-PRV-04** | Must | The device shall sample the button only after boot completes. | Hold the button through a reset | Device boots normally | Serial-download mode entered | `[derived]` interface spec §3 |
+| **FR-PRV-05** | Must | The device shall persist submitted configuration to NVS before leaving Provisioning. | Submit configuration; power-cycle | Configuration survives | Values lost | `[derived]` D-C3 |
+| **FR-PRV-06** | Must | The device shall retain previously stored configuration when Provisioning ends without a submission. | Enter Provisioning, wait for timeout without submitting | Prior configuration intact | Configuration erased on entry | `[derived]` |
+| **FR-PRV-07** | Should | The configuration page shall list the WiFi networks the device can see. |  |  |  | `[pack:esp32]` |
+| **NFR-PRV-01** | Must | The SoftAP shall accept associations within 10 s of entering Provisioning. |  |  |  | `[derived]` |
+| **FR-PRV-08** | Must | The device shall resolve a broker address given as a `.local` hostname, or reject it at the portal with a stated reason. |  |  |  | `[derived]` |
 
 ### 9.3 Configuration collected
 
@@ -621,17 +553,10 @@ broker host and port, MQTT username and password, and an optional DLMS key.
 | Submission with an unreachable broker | Accepted and persisted. The portal cannot verify a broker it has no route to; the device retries after leaving Provisioning |
 | Power lost mid-submission | NVS write is atomic; the prior configuration survives (FR-PRV-06) |
 
-### 9.5 Verification contracts
+### 9.5 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-PRV-01/02 | Enter Provisioning; attempt association with the derived passphrase, then a wrong one | Correct passphrase associates; wrong one rejected | An open network is offered | bench |
-| FR-PRV-03 | Associate and request any hostname | The configuration page is served | The request reaches the internet | bench |
-| FR-PRV-04 | Hold the button through a reset | Device boots normally | Serial-download mode entered | target |
-| FR-PRV-05 | Submit configuration; power-cycle | Configuration survives | Values lost | bench |
-| FR-PRV-06 | Enter Provisioning, wait for timeout without submitting | Prior configuration intact | Configuration erased on entry | bench |
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 10. OTA Updater
 
@@ -642,18 +567,18 @@ served over HTTPS.
 
 ### 10.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-OTA-01** | Must | The device shall begin a firmware download on receipt of a URL on its OTA command topic. | `[user]` D-U2 |
-| **FR-OTA-02** | Must | The device shall not initiate a firmware download from any other trigger. | `[user]` D-U2 |
-| **FR-OTA-03** | Must | The device shall verify the TLS certificate chain of the download server against an embedded certificate authority, and abort the download on failure. | `[user]` D-U5 |
-| **FR-OTA-04** | Must | The device shall write the downloaded image to the inactive OTA slot. | `[derived]` D-U3 |
-| **FR-OTA-05** | Must | The device shall mark a newly booted image valid only after an MQTT session is established. | `[user]` D-U4 |
-| **FR-OTA-06** | Must | The device shall not require a meter decode before marking an image valid. | `[user]` D-U4 |
-| **FR-OTA-07** | Must | On reset before an image is marked valid, the bootloader shall revert to the previously valid image. | `[user]` D-U3 |
-| **FR-OTA-08** | Must | The device shall continue decoding meter frames during a download. | `[derived]` FR-SUP-08 |
-| **FR-OTA-09** | Must | The device shall abort a download on loss of WiFi and discard the partial image. | `[derived]` |
-| **NFR-OTA-01** | Must | The device shall report the running firmware version in its Home Assistant device information. | `[user]` D-B5 |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-OTA-01** | Must | The device shall begin a firmware download on receipt of a URL on its OTA command topic. | Publish a valid URL to the command topic | Download begins within 5 s | Command ignored | `[user]` D-U2 |
+| **FR-OTA-02** | Must | The device shall not initiate a firmware download from any other trigger. | Run 24 h with a newer release published | No download | Any unattended update | `[user]` D-U2 |
+| **FR-OTA-03** | Must | The device shall verify the TLS certificate chain of the download server against an embedded certificate authority, and abort the download on failure. | Serve an image over TLS with an untrusted certificate | Download aborted, image not written | Image accepted | `[user]` D-U5 |
+| **FR-OTA-04** | Must | The device shall write the downloaded image to the inactive OTA slot. |  |  |  | `[derived]` D-U3 |
+| **FR-OTA-05** | Must | The device shall mark a newly booted image valid only after an MQTT session is established. |  |  |  | `[user]` D-U4 |
+| **FR-OTA-06** | Must | The device shall not require a meter decode before marking an image valid. |  |  |  | `[user]` D-U4 |
+| **FR-OTA-07** | Must | On reset before an image is marked valid, the bootloader shall revert to the previously valid image. |  |  |  | `[user]` D-U3 |
+| **FR-OTA-08** | Must | The device shall continue decoding meter frames during a download. | Feed meter cycles throughout a download | Decoding continues | Ingestion stalls for the download | `[derived]` FR-SUP-08 |
+| **FR-OTA-09** | Must | The device shall abort a download on loss of WiFi and discard the partial image. | Disable the access point mid-download | Download aborted, partial image discarded | Partial image marked bootable | `[derived]` |
+| **NFR-OTA-01** | Must | The device shall report the running firmware version in its Home Assistant device information. |  |  |  | `[user]` D-B5 |
 
 FR-OTA-05 and FR-OTA-06 are stated separately because they fail separately. The
 first is the bar; the second forbids raising it. An image that boots, joins WiFi
@@ -671,54 +596,10 @@ would let a silent meter roll back a healthy build.
 | Power lost mid-write | Inactive slot is incomplete; bootloader runs the valid image |
 | New image cannot reach the broker | Never marked valid; next reset reverts (FR-OTA-07) |
 
-### 10.4 Verification contracts
+### 10.4 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-OTA-01 | Publish a valid URL to the command topic | Download begins within 5 s | Command ignored | bench |
-| FR-OTA-02 | Run 24 h with a newer release published | No download | Any unattended update | bench |
-| FR-OTA-03 | Serve an image over TLS with an untrusted certificate | Download aborted, image not written | Image accepted | bench |
-| FR-OTA-08 | Feed meter cycles throughout a download | Decoding continues | Ingestion stalls for the download | bench |
-| FR-OTA-09 | Disable the access point mid-download | Download aborted, partial image discarded | Partial image marked bootable | bench |
-
-The contract for the requirement that decides whether a bad update costs a site
-visit:
-
-```yaml
-id: FR-OTA-07
-verification:
-  preconditions:
-    - The DUT runs a known-good image in slot A and is OPERATIONAL.
-    - A test image is built that boots and joins WiFi but is configured with an
-      unreachable broker address.
-  stimulus:
-    - Publish the test image URL to the OTA command topic.
-    - Allow the download and reboot to complete.
-    - Wait 120 s.
-    - Reset the DUT.
-  expected_observations:
-    - The test image boots and joins WiFi.
-    - No MQTT session is established, so the image is never marked valid.
-    - After the reset the bootloader selects slot A.
-    - The DUT returns to OPERATIONAL on the original image.
-  timing: recovery within 120 s of the reset
-  tolerance: +60 s
-  prohibited_outcomes:
-    - The DUT remains on the broken image after the reset.
-    - Stored configuration is lost during the revert.
-    - Recovery requires USB access or a button press.
-    - The bootloader enters a reset loop between slots.
-  tier: bench
-  evidence:
-    - Running partition label and firmware version before, during and after.
-    - Broker connection log showing no session from the test image.
-    - Boot log covering the revert.
-  cleanup:
-    - Confirm the DUT is OPERATIONAL on the known-good image.
-    - Erase the test image from the inactive slot.
-```
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 11. Status Indicator
 
@@ -729,13 +610,13 @@ access is out of scope (§4.3). The peer is a person looking into the cabinet.
 
 ### 11.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-LED-01** | Must | The device shall show blue steady while in Provisioning. | `[derived]` D-L1 |
-| **FR-LED-02** | Must | The device shall pulse green on each successful measurement publication. | `[derived]` D-L1 |
-| **FR-LED-03** | Must | The device shall blink red while retrying a WiFi connection. | `[derived]` D-L1 |
-| **FR-LED-04** | Must | The device shall show a distinct pattern throughout a firmware download and write. | `[derived]` D-L1 |
-| **FR-LED-05** | Must | The device shall leave all indicators off when connected and idle between cycles. | `[derived]` D-L1 |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-LED-01** | Must | The device shall show blue steady while in Provisioning. | Drive the DUT through every supervisor state | Indication matches §11.3 | Two states indistinguishable | `[derived]` D-L1 |
+| **FR-LED-02** | Must | The device shall pulse green on each successful measurement publication. | Drive the DUT through every supervisor state | Indication matches §11.3 | Two states indistinguishable | `[derived]` D-L1 |
+| **FR-LED-03** | Must | The device shall blink red while retrying a WiFi connection. | Drive the DUT through every supervisor state | Indication matches §11.3 | Two states indistinguishable | `[derived]` D-L1 |
+| **FR-LED-04** | Must | The device shall show a distinct pattern throughout a firmware download and write. | Trigger an OTA; observe from command to reboot | Update pattern for the whole window | Indicator off at any point during the write | `[derived]` D-L1 |
+| **FR-LED-05** | Must | The device shall leave all indicators off when connected and idle between cycles. | Drive the DUT through every supervisor state | Indication matches §11.3 | Two states indistinguishable | `[derived]` D-L1 |
 
 FR-LED-04 exists to stop a person power-cycling a device mid-flash. It is the one
 LED state whose absence has a physical consequence.
@@ -751,16 +632,10 @@ LED state whose absence has a physical consequence.
 | `OPERATIONAL` | Off; green pulse 100 ms per publication |
 | `UPDATING` | Alternating blue/green, 200 ms |
 
-### 11.4 Verification contracts
+### 11.4 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-LED-01..05 | Drive the DUT through every supervisor state | Indication matches §11.3 | Two states indistinguishable | bench |
-| FR-LED-04 | Trigger an OTA; observe from command to reboot | Update pattern for the whole window | Indicator off at any point during the write | bench |
-
----
-
-# Part C — Foundation / Platform (L0)
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 12. Network & Transport
 
@@ -769,14 +644,6 @@ LED state whose absence has a physical consequence.
 WiFi station mode, the MQTT client, the TLS stack, and the HTTP server are
 ESP-IDF components this project configures and uses. None is tested in isolation;
 all are exercised transitively by Parts A and B.
-
-### 12.2 Requirements
-
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **NFR-NET-01** | Must | The device shall use WiFi station mode on the 2.4 GHz band in every supervisor state except `PROVISIONING`, where it operates as a SoftAP. | `[derived]` |
-| **NFR-NET-02** | Must | The MQTT client shall not be started before the WiFi association completes. | `[derived]` |
-| **NFR-NET-03** | Must | The device shall re-establish an MQTT session within 60 s of the broker becoming reachable. | `[pack:esp32]` |
 
 ### 12.3 Dependency & lifecycle
 
@@ -794,20 +661,16 @@ by the meter, happen whenever the meter does.
 
 ### 13.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-NVS-01** | Must | The device shall store configuration in NVS without encryption. | `[user]` D-C2 |
-| **FR-NVS-02** | Must | The device shall operate with defaults and enter Provisioning when the NVS namespace is absent or unreadable. | `[pack:esp32]` |
-| **FR-NVS-03** | Must | Configuration shall survive an unclean power loss. | `[pack:esp32]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-NVS-01** | Must | The device shall store configuration in NVS without encryption. |  |  |  | `[user]` D-C2 |
+| **FR-NVS-02** | Must | The device shall operate with defaults and enter Provisioning when the NVS namespace is absent or unreadable. | Corrupt the NVS partition; boot | Device boots and enters Provisioning | Boot loop; crash | `[pack:esp32]` |
+| **FR-NVS-03** | Must | Configuration shall survive an unclean power loss. | Cut power 100 times during normal operation | Configuration intact each time | Configuration lost or partially written | `[pack:esp32]` |
 
-### 13.3 Verification contracts
+### 13.3 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-NVS-02 | Corrupt the NVS partition; boot | Device boots and enters Provisioning | Boot loop; crash | bench |
-| FR-NVS-03 | Cut power 100 times during normal operation | Configuration intact each time | Configuration lost or partially written | bench |
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 14. DLMS Decoder Library
 
@@ -819,12 +682,12 @@ a project function — it is exercised transitively through §7.
 
 ### 14.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^2.1.0 for DLMS decoding. | `[user]` D-D1 |
-| **FR-DEC-02** | Must | The dependency shall be resolved through the Espressif Component Registry and pinned by a committed `dependencies.lock`. | `[derived]` |
-| **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | `[code]` dlms_parser |
-| **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. | `[code]` dlms_parser |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-DEC-01** | Must | The device shall use `esphome/dlms_parser` version ^2.1.0 for DLMS decoding. |  |  |  | `[user]` D-D1 |
+| **FR-DEC-02** | Must | The dependency shall be resolved through the Espressif Component Registry and pinned by a committed `dependencies.lock`. |  |  |  | `[derived]` |
+| **FR-DEC-03** | Must | The device shall apply scaling to decoded values exactly once. | Decode a capture with a known true value | The published value equals the meter's value in the Appendix B unit | A value out by any power of ten | `[code]` dlms_parser |
+| **FR-DEC-04** | Must | Cumulative energy registers shall be carried as integers, not as `float`. |  |  |  | `[code]` dlms_parser |
 
 FR-DEC-03 is stated because the failure it prevents is invisible: if the library
 already scales and the application scales again, every reading is wrong by a
@@ -844,13 +707,10 @@ so a total that quantises produces phantom consumption and phantom zeroes. Read
 `value` and `scaler` and keep cumulative registers in integer arithmetic; the
 float accessor is fine for instantaneous power.
 
-### 14.3 Verification
+### 14.3 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-DEC-03 | Decode a capture with a known true value | The published value equals the meter's value in the Appendix B unit | A value out by any power of ten | host |
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 15. System Supervision
 
@@ -860,28 +720,22 @@ Returns the device to service after a software hang without a person present.
 
 ### 15.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-WDT-01** | Must | The device shall enable the task watchdog for every task it creates. | `[pack:esp32]` |
-| **FR-WDT-02** | Must | The device shall reset when a subscribed task fails to feed the watchdog within its timeout. | `[pack:esp32]` |
-| **FR-WDT-03** | Must | The watchdog shall not reset the device during a normal meter cycle gap or a firmware download. | `[pack:esp32]` |
-| **FR-WDT-04** | Must | The device shall record the reset reason and make it available on the serial console after boot. | `[pack:esp32]` |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-WDT-01** | Must | The device shall enable the task watchdog for every task it creates. |  |  |  | `[pack:esp32]` |
+| **FR-WDT-02** | Must | The device shall reset when a subscribed task fails to feed the watchdog within its timeout. | Command a test build into an infinite loop in one task | Device resets within the timeout and returns to `OPERATIONAL` | Device hangs indefinitely | `[pack:esp32]` |
+| **FR-WDT-03** | Must | The watchdog shall not reset the device during a normal meter cycle gap or a firmware download. | Feed no meter data for 30 min while connected; separately, run a full OTA | No reset in either case | Any watchdog reset | `[pack:esp32]` |
+| **FR-WDT-04** | Must | The device shall record the reset reason and make it available on the serial console after boot. | Force a watchdog reset; read the console | Reset reason reported as watchdog | Reason reported as power-on | `[pack:esp32]` |
+| **FR-WDT-05** | Must | The device shall not reset as a response to any network, broker or meter fault. |  |  |  | `[derived]` D-C4 |
 
 FR-WDT-03 is the requirement that stops the watchdog becoming the fault. A meter
 silent for minutes and a multi-minute OTA download are both normal, and a naive
 timeout turns either into a reboot loop.
 
-### 15.3 Verification contracts
+### 15.3 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-WDT-02 | Command a test build into an infinite loop in one task | Device resets within the timeout and returns to `OPERATIONAL` | Device hangs indefinitely | bench |
-| FR-WDT-03 | Feed no meter data for 30 min while connected; separately, run a full OTA | No reset in either case | Any watchdog reset | bench |
-| FR-WDT-04 | Force a watchdog reset; read the console | Reset reason reported as watchdog | Reason reported as power-on | bench |
-
----
-
-# Part D — Cross-cutting Concerns
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 16. Device & Meter Identity
 
@@ -892,22 +746,19 @@ identifies the data; the **device** identifies the hardware reading it.
 
 ### 16.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-ID-01** | Must | Home Assistant entity identity shall derive from the meter serial. | `[user]` D-H3 |
-| **FR-ID-02** | Must | MQTT client identity and operational topics shall derive from the device MAC address. | `[user]` D-H3 |
-| **FR-ID-03** | Must | Replacing the hardware reading a given meter shall not change entity identity. | `[user]` D-H3 |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-ID-01** | Must | Home Assistant entity identity shall derive from the meter serial. |  |  |  | `[user]` D-H3 |
+| **FR-ID-02** | Must | MQTT client identity and operational topics shall derive from the device MAC address. |  |  |  | `[user]` D-H3 |
+| **FR-ID-03** | Must | Replacing the hardware reading a given meter shall not change entity identity. | Record entity IDs; swap in a second gPlug on the same meter | Entity IDs unchanged; history continues | Duplicate entities created | `[user]` D-H3 |
 
 FR-ID-03 is the reason for the split. Energy statistics accumulate for years; a
 device replaced after a failure must not restart that history.
 
-### 16.3 Verification
+### 16.3 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-ID-03 | Record entity IDs; swap in a second gPlug on the same meter | Entity IDs unchanged; history continues | Duplicate entities created | bench |
-
----
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 17. Configuration Catalogue
 
@@ -921,18 +772,6 @@ device replaced after a failure must not restart that history.
 | `mqtt_pass` | string | empty | No | Portal |
 | `dlms_key` | hex string | empty | No | Portal |
 | `serial_len` | uint8 | 8 | No | Compile-time default, portal override |
-
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-CFG-01** | Must | The device shall treat WiFi SSID, WiFi passphrase and broker host as required, and enter Provisioning when any is absent. | `[derived]` |
-| **FR-CFG-02** | Must | The device shall accept an empty MQTT username and password. | `[derived]` |
-| **FR-CFG-03** | Must | The device shall store a DLMS key when supplied, and operate without one when it is absent. | `[user]` D-C1 |
-| **FR-CFG-04** | Must | The device shall resolve a broker address given as a `.local` hostname, or reject it at the portal with a stated reason. | `[derived]` |
-
-FR-CFG-04 exists because ESP-IDF 6 unbundled mDNS. A user typing
-`homeassistant.local` is the expected case, not an edge case; the device either
-carries the mDNS component or tells the user at the point of entry. Silently
-failing to resolve after the portal has closed is the outcome this forbids.
 
 ---
 
@@ -951,61 +790,11 @@ failing to resolve after the portal has closed is the outcome this forbids.
 
 ### 18.2 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-SEC-01** | Must | The device shall verify the TLS certificate chain for firmware downloads against an embedded certificate authority. | `[user]` D-U5 |
-| **FR-SEC-02** | Must | The device shall reject a firmware download whose certificate does not validate. | `[user]` D-U5 |
-| **FR-SEC-03** | Must | The provisioning access point shall require a WPA2 passphrase. | `[user]` D-C6 |
-| **FR-SEC-04** | Must | The device shall not expose stored passphrases through any network interface. | `[derived]` |
-| **NFR-SEC-01** | Must | Configuration is stored unencrypted; confidentiality against an attacker with physical flash access is **not claimed**. | `[user]` D-C2 |
-
-NFR-SEC-01 is deliberately a non-claim rather than a requirement. Writing
-"credentials shall be protected at rest" when they are stored in plaintext would
-produce an acceptance criterion that cannot fail — the defect §6.5.1 exists to
-prevent. The accepted risk is recorded in §4.
-
-The asymmetry across these requirements is intentional. Plaintext NVS and a
-short-lived provisioning window cost a credential in a scenario that requires
-physical presence. A firmware download without certificate validation costs
-arbitrary code execution to anyone on the path, permanently. Only the second
-justifies its implementation cost.
-
-### 18.3 Verification
-
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-SEC-01/02 | Serve an image with a self-signed certificate; then with an expired one | Both rejected, image not written | Either accepted | bench |
-| FR-SEC-04 | Request every portal endpoint after provisioning | No passphrase in any response body | A passphrase echoed in a form field | bench |
-
 ---
 
-## 19. Error Handling & Degraded Operation
+## 19. Degraded Operation
 
-### 19.1 Requirements
-
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-ERR-01** | Must | The device shall continue operating in every state when the meter produces no data. | `[derived]` |
-| **FR-ERR-02** | Must | The device shall count discarded frames and make the count available on the serial console. | `[derived]` |
-| **FR-ERR-03** | Must | The device shall log a distinct condition when a burst is received but no block is found. | `[code]` published captures |
-| **FR-ERR-04** | Must | The device shall not reset as a response to any network, broker or meter fault. | `[derived]` D-C4 |
-
-**FR-MTR-10 exists because the identity moves.** The two published
-configurations do not merely differ in length: one publishes the serial as the
-COSEM logical device name and the other as device ID 1. A decoder reading a
-single OBIS code finds nothing on the other configuration, and finding nothing
-looks exactly like a meter that is not talking.
-
-FR-ERR-03 is the diagnostic that turns a wrong serial length from a silent
-failure into a visible one. A wrong serial length produces exactly this signature — bytes arriving, CRC
-passing, nothing decoded — and without a distinct log line it is indistinguishable
-from a meter that is not talking.
-
-FR-ERR-04 forbids the reflex fix. A device that reboots to clear a fault loses
-its uptime, its diagnostics, and any chance of understanding what happened, and
-in the worst case reboots forever.
-
-### 19.2 Degraded modes
+### 19.1 Degraded modes
 
 | Fault | Retained capability | Lost capability |
 |---|---|---|
@@ -1020,16 +809,16 @@ in the worst case reboots forever.
 
 ### 20.1 Requirements
 
-| ID | Priority | Requirement | Provenance |
-|---|---|---|---|
-| **FR-BLD-01** | Must | The firmware version shall derive from the git tag. | `[user]` D-B5 |
-| **FR-BLD-02** | Must | An untagged build's version shall include the short commit hash. | `[user]` D-B5 |
-| **FR-BLD-03** | Must | The simulated build shall be selected at compile time. | `[user]` D-T2/T3 |
-| **FR-BLD-04** | Must | The production build shall contain no capability to generate measurement data. | `[user]` D-T3 |
-| **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. | `[user]` D-T4 |
-| **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | `[user]` D-T4 |
-| **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. | `[user]` D-B1 |
-| **FR-BLD-08** | Must | Firmware shall be published only from a tagged commit. | `[user]` D-B2 |
+| ID | Pri | Requirement | Stimulus | Expected | Must NOT | Provenance |
+|---|---|---|---|---|---|---|
+| **FR-BLD-01** | Must | The firmware version shall derive from the git tag. |  |  |  | `[user]` D-B5 |
+| **FR-BLD-02** | Must | An untagged build's version shall include the short commit hash. |  |  |  | `[user]` D-B5 |
+| **FR-BLD-03** | Must | The simulated build shall be selected at compile time. |  |  |  | `[user]` D-T2/T3 |
+| **FR-BLD-04** | Must | The production build shall contain no capability to generate measurement data. | Search the production binary for the embedded capture data | Absent | Any capture data present | `[user]` D-T3 |
+| **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. |  |  |  | `[user]` D-T4 |
+| **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | Run the simulated build against a Home Assistant instance | Entities appear only under the test prefix | Production entities created or overwritten | `[user]` D-T4 |
+| **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. |  |  |  | `[user]` D-B1 |
+| **FR-BLD-08** | Must | Firmware shall be published only from a tagged commit. | Push to a branch without a tag | No release asset produced | A downloadable binary published | `[user]` D-B2 |
 
 FR-BLD-04 and FR-BLD-06 protect the same thing from two directions. Home
 Assistant's `total_increasing` statistics are effectively permanent — one
@@ -1044,17 +833,10 @@ reach. **Tagging is therefore the human assertion that the bench suite passed**
 (D-B3). This is a deliberate position, not a missing gate; automating it would
 require a self-hosted runner on the bench network.
 
-### 20.3 Verification
+### 20.3 Tests
 
-| ID | Precondition · stimulus | Expected observation | Must NOT happen | Tier |
-|---|---|---|---|---|
-| FR-BLD-04 | Search the production binary for the embedded capture data | Absent | Any capture data present | other |
-| FR-BLD-06 | Run the simulated build against a Home Assistant instance | Entities appear only under the test prefix | Production entities created or overwritten | bench |
-| FR-BLD-08 | Push to a branch without a tag | No release asset produced | A downloadable binary published | other |
-
----
-
-# Part E — Operations & Verification
+Which tests cover these requirements, and what each produced, is in
+[`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 
 ## 21. Operational Procedures
 
@@ -1065,7 +847,7 @@ A reading path through the chapters above; component detail is not restated.
 | **First flash** | Partition layout Appendix C · flash over USB |
 | **Provision** | §9 portal · §17 configuration catalogue · §11 blue steady confirms |
 | **Verify** | §8 discovery topics appear · Energy Dashboard accepts the entities (§8.5) |
-| **Operate** | §11 indicator states · §19.2 degraded modes |
+| **Operate** | §11 indicator states · §19.1 degraded modes |
 | **Reconfigure** | §6 button hold 5 s → §9 portal → returns to §6 `CONNECTING` |
 | **Update** | §10 publish URL to the command topic · §11 update pattern · §10.4 verify version |
 | **Recover** | WiFi lost: §6 retries, no action needed · bad firmware: §10 reset reverts · hang: §15 watchdog · configuration lost: §9 portal |
@@ -1163,7 +945,7 @@ pre-implementation FSD and is recorded rather than left to be inferred.
 | Portal timeout | 300 s | FR-SUP-07 |
 | Button hold | 5000 ms | FR-SUP-06 |
 | Publish latency budget | 2 s | NFR-HA-01 |
-| MQTT reconnect budget | 60 s | NFR-NET-03 |
+| MQTT reconnect budget | 60 s | NFR-SUP-01 |
 
 ## Appendix B — Published entities
 

@@ -18,7 +18,7 @@
   [`testing.md`](testing.md).
 - **Errors fail loudly** — actionable messages, no silent catches, no swallowed
   return codes. An ignored error is a defect even when nothing breaks yet.
-  `FR-ERR-03` exists because a silent decode failure is indistinguishable from a
+  `FR-MTR-14` exists because a silent decode failure is indistinguishable from a
   quiet meter.
 - **Secrets are never in code or documentation** — only their location is
   documented. Test fixtures use placeholder credentials, never real ones.

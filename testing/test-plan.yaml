@@ -46,7 +46,17 @@ capabilities:
   mbus-sim:
     what:      MBUS-Simulator in workbench slot 3, driven over its console
     available: yes
-    notes:     modes 1-3, plus fault / gap / silence / serial / identity / energy / scaler
+    notes:     modes 1-4, plus fault / gap / silence / serial / identity / energy / scaler
+    limitation: >
+      The signal is not fully stable and this is accepted, not a defect to chase.
+      Measured 2026-08-05 with mode 4 (counted ramp, 381 bytes): two bursts in six
+      arrived complete and byte-perfect, four arrived corrupted from the first byte
+      with the dense-high-bit pattern of a rate or polarity mismatch. A burst either
+      lands cleanly or garbles - it does not lose a prefix.
+
+      So a bench assertion on decoded output must span several cycles and require
+      one good one, never assert on a single cycle. A single-cycle test here is
+      flaky by construction, and will be blamed on the firmware.
 
   mqtt-broker:
     what:      mosquitto on the workbench, reachable from the bench access point
@@ -186,13 +196,44 @@ tests:
   commit:
   when:
 
+# A device that wakes mid-burst can land on a flag byte - one position in about
+# 150, so not rare. Measured 2026-08-05: prepending a single 0x7E to a working
+# capture takes it from 10 decoded values to 0. The parser does not skip a
+# leading flag, so the firmware must, and nothing currently does.
+- id: TS-023
+  verifies: [FR-MTR-06]
+  tier:     host
+  needs:    []
+  does:      Prepends one 0x7E, then two, to a complete capture
+  expected:  Full decode in both cases - a leading flag is skipped, not fatal
+  procedure: ctest -R TS-023
+  status:    not done
+  reason:    test not written; firmware does not skip leading flags yet
+  commit:
+  when:
+
 - id: TS-014
   verifies: [FR-MTR-01, FR-MTR-02, FR-MTR-03]
   tier:     target
   needs:    [board]
-  does:      Boots the board and inspects the live UART and pad configuration
-  expected:  2400 8E1, receive inverted, both internal pulls disabled
+  does:      Boots the board and reads the UART and pad configuration registers back
+  expected:  The chip reports 2400 8E1, receive inversion on, both internal pulls off
   procedure: P-TARGET
+  status:    not done
+  reason:    test not written
+  commit:
+  when:
+
+# The configuration registers say what the chip was told. Only a transmitter can
+# say whether the wire carries it. Same requirements, second tier - and the
+# simulator's mode 1 exists for exactly this rung of the ladder.
+- id: TS-022
+  verifies: [FR-MTR-01, FR-MTR-02]
+  tier:     bench
+  needs:    [board, mbus-sim]
+  does:      Simulator in `mode 1` drives a continuous 0x55 pattern down the line
+  expected:  Every received byte is 0x55 - a polarity mismatch yields a uniform 0xD5 instead
+  procedure: P-METER
   status:    not done
   reason:    test not written
   commit:
@@ -230,7 +271,8 @@ tests:
   expected:  The cycle after the disturbed one is complete, identity included
   procedure: P-METER
   status:    not done
-  reason:    test not written
+  reason:    test not written; and the rig has never yet delivered one complete
+             mode-3 telegram, so whether the device decodes a clean one is unknown
   commit:
   when:
 

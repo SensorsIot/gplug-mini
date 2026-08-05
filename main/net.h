@@ -1,6 +1,6 @@
 // Network: WiFi station and the MQTT client.
 //
-// Both retry indefinitely and neither resets to clear a fault (FR-ERR-04). The
+// Both retry indefinitely and neither resets to clear a fault (FR-WDT-05). The
 // station never falls back to SoftAP on a failure to connect — a device in a
 // basement that puts up a portal nobody can see is unreachable, not recoverable
 // (FR-SUP-04).

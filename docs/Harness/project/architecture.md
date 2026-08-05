@@ -114,7 +114,7 @@ Treat a falling number as a defect, not as a reason to raise the constant.
 |---|---|
 | Transmit on the meter link | The customer interface belongs to a sealed metering device — `FR-MTR-04` |
 | Enter AP mode because WiFi dropped | Strands the device in a portal nobody can see — `FR-SUP-04` |
-| Reset to clear a fault | Loses uptime, diagnostics, and any chance of diagnosis — `FR-ERR-04` |
+| Reset to clear a fault | Loses uptime, diagnostics, and any chance of diagnosis — `FR-WDT-05` |
 | Poll for firmware updates | Delivers a bad build everywhere before anyone notices — `FR-OTA-02` |
 | Retain measurement state messages | A retained reading is indistinguishable from a current one — `FR-HA-07` |
 | Publish a placeholder for an absent register | Zero-meaning-absent and zero-meaning-zero are different facts — `FR-HA-05` |

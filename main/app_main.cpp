@@ -228,13 +228,13 @@ extern "C" void app_main() {
     if (result.count == 0) {
       // A burst arrived and nothing decoded. Distinct from silence, and worth
       // its own line — this is the signature of a wrong serial length or a
-      // register set nobody mapped (FR-ERR-03).
+      // register set nobody mapped (FR-MTR-14).
       //
       // The head of the buffer comes with it. "Nothing decoded" alone cannot
       // distinguish a framing error from an unencrypted telegram we mis-parse
       // from an encrypted one, and those want completely different fixes.
       // 7E marks HDLC; 68 marks an M-Bus long frame; noise looks like neither.
-      ESP_LOGW(TAG, "burst received but nothing decoded (FR-ERR-03)");
+      ESP_LOGW(TAG, "burst received but nothing decoded (FR-MTR-14)");
       char head[3 * 32 + 1];
       const size_t shown = std::min<size_t>(cycle.size(), 32);
       for (size_t i = 0; i < shown; ++i) {

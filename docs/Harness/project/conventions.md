@@ -11,7 +11,7 @@ Four ESP-IDF 6 behaviours are silent until a build fails:
 |---|---|
 | CMake minimum is **3.22** | A `cmake_minimum_required(VERSION 3.16)` copied from a 5.x template fails to configure |
 | **cJSON is not bundled** | Discovery payloads are JSON, so `espressif/cjson` is a required managed component |
-| **mDNS is not bundled** | A broker entered as `homeassistant.local` cannot resolve without `espressif/mdns` — see `FR-CFG-04` |
+| **mDNS is not bundled** | A broker entered as `homeassistant.local` cannot resolve without `espressif/mdns` — see `FR-PRV-08` |
 | Managed components are solved at configure time | Adding to `idf_component.yml` does nothing until the build directory is removed or `idf.py reconfigure` runs |
 
 Commit `dependencies.lock`. Do not commit `managed_components/` or `sdkconfig`;
