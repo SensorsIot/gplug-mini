@@ -1,6 +1,8 @@
 // The indicator task — the only writer of the LED pins (FR-LED-01..05).
 #include "indicator.h"
 
+#include <initializer_list>
+
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
