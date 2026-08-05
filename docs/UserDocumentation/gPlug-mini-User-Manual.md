@@ -5,9 +5,11 @@ operational detail lives here and nowhere else — the
 [FSD](../Functionality/gPlug-mini-FSD.md) says what the device does, this says how
 you make it do it.
 
-**Status: nothing is deployable yet.** No firmware exists; every requirement is at
-*Specified*. The chapters below are the shape this manual takes once there is
-something to install, and each names the requirement it will draw from.
+**Status: provisioning works; the rest is still being written.** Chapter 4 below
+describes behaviour demonstrated on hardware on 2026-08-05 — the portal, the
+credentials, and what the device does with them. The chapters still marked
+*Pending* are the shape this manual takes as each part is proved, and each names
+the requirement it will draw from.
 
 This file exists from the first commit deliberately. An OPERATE plane that was
 never created is invisible — nobody misses a directory that does not exist, and
@@ -55,9 +57,62 @@ device is unpowered whenever the meter is.
 
 ## 4. Provisioning
 
-*Pending Phase 2.* The device raises a WPA2 access point on first boot. Its
-passphrase is derived from the MAC address — `FR-PRV-02` defines the rule, and
-this chapter states it in a form you can compute by hand.
+On first boot — and after any reset that leaves it without a stored
+configuration — the device raises its own WiFi network and waits **five minutes**
+for you to configure it. If nobody connects in that time it gives up and
+restarts; power-cycle it to get another five minutes.
+
+### 4.1 Join the device's network
+
+Look for a network named **`gplug-` followed by six hex characters**, for example
+`gplug-254a75`. Those six characters are the last three bytes of the device's MAC
+address, so every unit has a different name and two units side by side cannot be
+confused.
+
+The passphrase is **`gplug` followed by those same six characters** — for
+`gplug-254a75` the passphrase is `gplug254a75`.
+
+That rule exists so the device stays recoverable with no label and no paperwork:
+the network name is broadcast, and the name tells you the passphrase. It is a
+setup network that exists for five minutes at a time, not a secret. The network
+is WPA2 rather than open so that what you type into the form — your home WiFi
+password among it — is not readable by anyone in range.
+
+### 4.2 Fill in the form
+
+Once joined, open any web address at all. `http://192.168.4.1/` works, but so
+does anything else: the device answers every hostname while provisioning, so
+most phones offer the page by themselves as a "sign in to network" notification.
+
+The form asks for four things:
+
+| Field | What to enter | Required |
+|---|---|---|
+| **WiFi network** | the name of your home network | yes |
+| **WiFi password** | its password; leave empty for an open network | no |
+| **Broker** | your MQTT broker as a full URI, e.g. `mqtt://192.168.0.10:1883` | yes |
+| **Hostname** | a name for the device on your network; leave empty for the default | no |
+
+The page lists the networks the device can see, so you can check the spelling of
+yours against what it actually hears. A network name typed with one character
+wrong fails later as a *wrong password*, which is the hardest possible way to
+find a typo.
+
+**The broker must include the `mqtt://` scheme.** An address on its own is
+refused, and the page tells you so rather than accepting it and failing later —
+by which point nothing would point back at this form.
+
+### 4.3 What happens next
+
+The device replies **Saved**, stores the configuration, and restarts. On the next
+boot it joins the network you gave it and connects to your broker; the setup
+network disappears. Nothing is written until the whole form is accepted, so a
+rejected submission leaves the device exactly as it was, still waiting.
+
+If it cannot join — wrong password, network out of range — it does **not** put
+the setup network back up. That is deliberate: a device in a meter cupboard
+raising an access point nobody can see is unreachable rather than recoverable.
+Use chapter 9 to reconfigure it deliberately.
 
 ## 5. Configuration reference
 

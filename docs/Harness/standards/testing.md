@@ -322,7 +322,54 @@ theory we had built.
 ## P-NETWORK — WiFi, portal and broker
 
 **Needs** `board`, `wifi-ap`, `mqtt-broker`; fault injection also needs
-`wifi-ap-outage`, which does not exist yet.
+`wifi-ap-outage`, which works — see the capability note in `test-plan.yaml`.
+
+### The bench network — settle this before touching the board
+
+| Thing | Value | Why |
+|---|---|---|
+| AP SSID | `wb-037e71` | last 3 octets of the bench radio's MAC — no two benches collide |
+| AP passphrase | `benchtest123` | WPA2 |
+| AP subnet | `192.168.27.1/24`, DHCP `.2–.20` | third octet is the bench's own LAN host number |
+| Broker | `mqtt://192.168.0.27:1883` | the bench's LAN address; the AP NATs out to it, so one address serves bench tests and device alike |
+| **Never the bench's** | `192.168.4.0/24` | `192.168.4.1` is the ESP32 SoftAP default and belongs to a DUT running its portal |
+
+Two traps, both of which answer `ok: true` while doing the wrong thing:
+
+- `POST /api/wifi/ap_start` takes **`pass`**, not `password`. An unknown key is
+  ignored and the AP comes up **open**; the board then refuses it under its
+  authmode threshold and looks broken.
+- **mosquitto does not survive an `rfc2217-portal` restart.** It stops silently
+  and an address that worked minutes ago starts refusing connections. `POST
+  /api/mqtt/start` after any service restart.
+
+**Prove the bench before the board.** A bench fault and a firmware fault present
+identically from the device side, and the device is far slower to interrogate:
+
+```bash
+ssh pi@<bench> '
+  ip -4 -br addr show wlan0                                 # expect 192.168.27.1/24
+  sudo grep -E "^ssid|^wpa" /tmp/wifi-tester/hostapd.conf   # expect wpa=2 + passphrase
+  ip link show wlan0 | grep ether                           # note the BSSID
+  timeout 8 mosquitto_sub -h 192.168.0.27 -t bench/selftest -C 1 &
+  sleep 2; mosquitto_pub -h 192.168.0.27 -t bench/selftest -m bench-ok; wait'
+```
+
+It must print `bench-ok`. Nothing learned from the board counts until it does.
+
+**An SSID is not an identity — check the BSSID.** On 2026-08-05 two benches both
+answered to `gplug-bench`; the board joined the other one, took a lease on its
+subnet, and that bench ran no broker at all. Three correct broker addresses were
+each blamed in turn before anyone read the line the board had been printing from
+the first capture:
+
+```text
+wifi:connected with <ssid>, aid = 1, channel 11, bssid = d8:3a:dd:7c:b1:c2
+```
+
+Compare that BSSID against the bench radio's own MAC before suspecting any
+address. `ap_status` showing `stations: []` is not evidence of a failed join — it
+read empty while the board was happily associated elsewhere. Believe the board.
 
 **Before** — confirm the board is associated and holding a broker session, so a
 later loss is attributable to the stimulus rather than to the starting state.
