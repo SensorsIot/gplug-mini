@@ -15,11 +15,16 @@ import pytest
 
 from conftest import a_good_cycle
 
-# What the simulator reports emitting per cycle in mode 3 with an identity, read
-# from its own `emit` line rather than assumed.
-def emitted_bytes(sim):
-    for line in sim.command("status", settle=1.2).splitlines():
-        m = re.search(r"bytes=(\d+)", line)
+# What the simulator reports emitting per cycle, read from its own `emit` line
+# rather than assumed.
+#
+# The line appears once per cycle, so this waits for one. Scraping a short
+# window instead returns None whenever the poll lands in the silence, and the
+# test then fails complaining about the simulator rather than about the board.
+def emitted_bytes(sim, seconds=12):
+    text = sim.command("", settle=seconds)
+    for line in text.splitlines():
+        m = re.search(r"emit .*bytes=(\d+)", line)
         if m:
             return int(m.group(1))
     return None
@@ -39,11 +44,14 @@ def test_ts022_polarity_is_right(dut, sim):
     as noise. Run before anything that interprets content, because every later
     result depends on the bits being the right way up.
     """
-    sim.command("mode 1")
+    # A mode change takes effect on the NEXT telegram, so the cycle in flight is
+    # still e450. Draining before it has passed captures a mixture and the test
+    # reports a polarity fault that is not there.
+    sim.command("mode 1", settle=8)
     dut.drain()
     heads = [m.group(1) for line in dut.lines(seconds=30)
              if (m := re.search(r"first 32 bytes: (.*)", line))]
-    sim.command("mode 3")
+    sim.command("mode 3", settle=1)
 
     assert heads, "no burst was reported in 30 s — the line is silent"
     seen = {b for head in heads for b in head.split()[:16]}

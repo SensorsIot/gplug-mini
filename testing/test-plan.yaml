@@ -138,6 +138,19 @@ capabilities:
       So these tests need a firmware test seam - a console command standing in for
       the press - plus one physical press to prove the real pin path once.
 
+  power-cycle:
+    what:      Removing and restoring the board's supply, to produce an unclean power loss
+    available: no
+    notes: >
+      Found missing 2026-08-05 while writing TS-079, which asks for 100 of them.
+      A reset is not a power loss and cannot stand in for one: FR-NVS-03 is about
+      a write interrupted with the supply going away, and a JTAG or software
+      reset leaves the flash controller to finish. Substituting one would make
+      the test pass while proving nothing about the requirement.
+
+      The EN pin route is closed too - the Pi header reaches nothing on this
+      board (see button-gpio). This needs switched power on the slot.
+
   second-board:
     what:      A second gPlug-mini board, to prove entity identity follows the meter and not the device
     available: no
@@ -1002,7 +1015,7 @@ tests:
 - id: TS-079
   verifies: [FR-NVS-03]
   tier:     bench
-  needs:    [board]
+  needs:    [board, power-cycle]
   does:      Cut power 100 times during normal operation
   expected:  Configuration intact each time
   procedure: P-METER

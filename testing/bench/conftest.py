@@ -67,10 +67,28 @@ class Dut:
         """
         self.wb.serial_monitor(DUT, timeout=1)
 
-    def lines(self, seconds=10, pattern=None):
-        """Serial output over a window, oldest first."""
-        result = self.wb.serial_monitor(DUT, pattern=pattern, timeout=seconds)
-        return result.get("output") or []
+    def lines(self, seconds=10):
+        """Serial output collected over a wall-clock window, oldest first.
+
+        Polled in short reads and accumulated rather than asked for in one long
+        one. A single call returns whatever the buffer holds when it answers,
+        which after a drain can be almost nothing — so a test asking for sixty
+        seconds of output got one cycle and then reported the rig as silent.
+        The fault was in the asking, and it presented as a bench failure.
+
+        Duplicates are dropped: consecutive reads overlap, and a repeated line
+        would otherwise be counted as a repeated cycle.
+        """
+        deadline = time.monotonic() + seconds
+        seen, out = set(), []
+        while time.monotonic() < deadline:
+            remaining = max(1, int(deadline - time.monotonic()))
+            result = self.wb.serial_monitor(DUT, timeout=min(5, remaining))
+            for line in result.get("output") or []:
+                if line not in seen:
+                    seen.add(line)
+                    out.append(line)
+        return out
 
     def await_line(self, pattern, seconds=30):
         """A line matching `pattern`, or fail.
