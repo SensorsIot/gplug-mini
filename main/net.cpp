@@ -1,10 +1,10 @@
 #include "net.h"
 
-#include "config.h"
-
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
+#include "config.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -97,10 +97,14 @@ void wifi_start_and_wait(const Config& conf) {
                                                       &on_wifi, nullptr, nullptr));
 
   wifi_config_t cfg = {};
-  std::snprintf(reinterpret_cast<char*>(cfg.sta.ssid), sizeof(cfg.sta.ssid),
-                "%s", conf.ssid);
-  std::snprintf(reinterpret_cast<char*>(cfg.sta.password), sizeof(cfg.sta.password),
-                "%s", conf.passphrase);
+  // Copied, not printed. These are 802.11 octet fields rather than C strings: a
+  // legal 32-octet SSID fills ssid[32] exactly and has no room for a terminator,
+  // so snprintf would truncate it to 31 — silently turning a valid SSID into one
+  // that matches no network. config.h has already rejected anything longer.
+  std::memcpy(cfg.sta.ssid, conf.ssid,
+              std::min(std::strlen(conf.ssid), sizeof(cfg.sta.ssid)));
+  std::memcpy(cfg.sta.password, conf.passphrase,
+              std::min(std::strlen(conf.passphrase), sizeof(cfg.sta.password)));
 
   // An open network has no passphrase, and demanding WPA2 of one makes it
   // unjoinable in a way that presents as bad credentials (config.h).
