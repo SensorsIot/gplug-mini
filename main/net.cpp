@@ -99,10 +99,16 @@ void on_mqtt(void*, esp_event_base_t, int32_t id, void* data) {
 
 const char* wifi_mac() { return mac_str; }
 
+void net_stack_init() {
+  const esp_err_t netif = esp_netif_init();
+  if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(netif);
+  const esp_err_t loop = esp_event_loop_create_default();
+  if (loop != ESP_OK && loop != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(loop);
+}
+
 void wifi_start_and_wait(const Config& conf) {
   // Storage is initialised in app_main, before the configuration is read.
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  net_stack_init();
   esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();

@@ -13,6 +13,18 @@
 
 namespace gplug {
 
+// Brings up esp_netif and the default event loop, once.
+//
+// Both the station path and Provisioning need them before they may create a
+// netif, and Provisioning runs first on a device with no configuration. Having
+// each caller do it separately is how the portal came to call
+// esp_netif_create_default_wifi_ap() on an uninitialised stack and abort at
+// boot — a defect that compiled cleanly and could only be found by running it.
+//
+// Safe to call twice: an already-initialised stack reports ESP_ERR_INVALID_STATE
+// and that is treated as success, because it is.
+void net_stack_init();
+
 // Blocks until the station has an address. Retries for as long as it takes.
 // Takes the configuration rather than reading Kconfig, so a provisioned device
 // and a bench build follow the same path.

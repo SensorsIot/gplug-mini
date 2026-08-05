@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "net.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -285,6 +286,10 @@ bool provisioning_run() {
     ESP_LOGE(TAG, "could not derive the access point identity");
     return false;
   }
+
+  // Before any netif exists. Provisioning runs before the station path on a
+  // device with no configuration, so it cannot assume someone else has done it.
+  net_stack_init();
 
   esp_netif_t* ap = esp_netif_create_default_wifi_ap();
   esp_netif_create_default_wifi_sta();   // FR-PRV-07 needs a station to scan with
