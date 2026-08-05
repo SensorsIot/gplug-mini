@@ -11,6 +11,26 @@
 # renaming a stable id and keeping one that lies. The id's prefix stays as a
 # convention; the generator warns when prefix and tier disagree.
 #
+# `kind` is what the test is for, and the balance between the four is a design
+# property worth watching rather than an accident:
+#
+#   standard    the ordinary case — the product doing its job
+#   deviation   still normal, just not the simplest case: either serial length,
+#               a quiet meter, waking mid-transmission, a `.local` broker
+#   negative    a fault or malfunction is injected
+#   security    derived from the threat profile in FSD §18.1, not from a feature
+#
+# Build them in that order and keep the volume tilted towards the first two. A
+# suite heavy on negatives is a suite that has never checked the product works —
+# this one reached 108 tests with the standard case for the whole meter journey
+# still unwritten, and a defect that stopped the device publishing entirely was
+# found sideways through an unrelated test.
+#
+# Security is separate because it derives from a threat model rather than a
+# feature, and carries its own rule: the criterion must be able to fail.
+# "Credentials are protected" cannot; "the passphrase appears in no portal
+# response" can.
+#
 # `expected` is what this particular test observes, not a copy of the
 # requirement's expected observation. One requirement usually needs several
 # tests — positive, boundary, negative — each seeing a different part of it.
@@ -178,6 +198,7 @@ tests:
 
 - id: TS-001
   verifies: [FR-MTR-05]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Decodes a reference capture whose meter serial is 16 characters
@@ -190,6 +211,7 @@ tests:
 
 - id: TS-002
   verifies: [FR-MTR-05]
+  kind:     deviation
   tier:     host
   needs:    []
   does:      Decodes a reference capture whose meter serial is 8 characters
@@ -202,6 +224,7 @@ tests:
 
 - id: TS-007
   verifies: [FR-MTR-09, FR-DEC-04, FR-HA-05]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Maps every register of a published capture to its label and unit
@@ -214,6 +237,7 @@ tests:
 
 - id: TS-009
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     host
   needs:    []
   does:      Feeds a capture starting 17 bytes in, inside the first frame
@@ -226,6 +250,7 @@ tests:
 
 - id: TS-010
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     host
   needs:    []
   does:      Starts 200 bytes in, losing the opening frames entirely
@@ -238,6 +263,7 @@ tests:
 
 - id: TS-107
   verifies: [FR-AGG-02, FR-MTR-10]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Parses a capture repeatedly from where the previous pass stopped, until it yields nothing
@@ -250,6 +276,7 @@ tests:
 
 - id: TS-011
   verifies: [FR-MTR-07]
+  kind:     negative
   tier:     host
   needs:    []
   does:      Feeds a capture with one corrupted checksum byte
@@ -261,6 +288,7 @@ tests:
   when:      2026-08-05T14:35Z
 - id: TS-012
   verifies: [FR-MTR-08]
+  kind:     negative
   tier:     host
   needs:    []
   does:      The same corrupted capture, observed at the decoder's input rather than its output
@@ -273,6 +301,7 @@ tests:
 
 - id: TS-013
   verifies: [FR-MTR-10]
+  kind:     deviation
   tier:     host
   needs:    []
   does:      Decodes three captures — identity as logical device name, as device ID 1, and absent
@@ -288,6 +317,7 @@ tests:
 # leading flag, so the firmware must, and nothing currently does.
 - id: TS-023
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     host
   needs:    []
   does:      Prepends one, two and three 0x7E bytes to a complete capture
@@ -300,6 +330,7 @@ tests:
 
 - id: TS-024
   verifies: [FR-MTR-06]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Opens a capture 40 bytes before a frame boundary, so the next frame is past a `7E 7E`
@@ -312,6 +343,7 @@ tests:
 
 - id: TS-014
   verifies: [FR-MTR-01, FR-MTR-02, FR-MTR-03]
+  kind:     standard
   tier:     target
   needs:    [board]
   does:      Boots the board and reads the UART and pad configuration registers back
@@ -327,6 +359,7 @@ tests:
 # simulator's mode 1 exists for exactly this rung of the ladder.
 - id: TS-022
   verifies: [FR-MTR-01, FR-MTR-02]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator in `mode 1` drives a continuous 0x55 pattern down the line
@@ -339,6 +372,7 @@ tests:
 
 - id: TS-015
   verifies: [FR-MTR-04]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim, button-gpio, ota-relay]
   does:      Watches the meter line for 10 minutes across every state, including Provisioning and OTA
@@ -351,6 +385,7 @@ tests:
 
 - id: TS-016
   verifies: [FR-MTR-05]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Switches the simulator between `serial 8` and `serial 16` on the wire, with the bench lead-in in place
@@ -363,6 +398,7 @@ tests:
 
 - id: TS-017
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator told `fault start-mid-frame` - one transmission begins partway through, bench lead-in in place
@@ -375,6 +411,7 @@ tests:
 
 - id: TS-018
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Resets the board mid-transmission - the case that happens on every real power-up, bench lead-in in place
@@ -387,6 +424,7 @@ tests:
 
 - id: TS-019
   verifies: [FR-MTR-07, FR-MTR-08]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
@@ -399,6 +437,7 @@ tests:
 
 - id: TS-020
   verifies: [NFR-MTR-01]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Emits the longest telegram the reference captures contain, in one burst
@@ -420,6 +459,7 @@ tests:
 # tier rather than being quietly satisfied by a relaxed bench assertion.
 - id: TS-103
   verifies: [NFR-MTR-01]
+  kind:     standard
   tier:     field
   needs:    [real-meter]
   does:      Counts bytes received per transmission against the meter's own telegram length
@@ -432,6 +472,7 @@ tests:
 
 - id: TS-021
   verifies: [FR-MTR-09, FR-MTR-10]
+  kind:     standard
   tier:     field
   needs:    [real-meter]
   does:      Reads the installed meter and compares against the meter's own display
@@ -444,6 +485,7 @@ tests:
 
 - id: TS-026
   verifies: [FR-AGG-03]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Builds one set from a cycle and reads the message it produces
@@ -456,6 +498,7 @@ tests:
 
 - id: TS-027
   verifies: [FR-AGG-04]
+  kind:     negative
   tier:     host
   needs:    []
   does:      Adds the same register twice with differing values, then a different register
@@ -468,6 +511,7 @@ tests:
 
 - id: TS-028
   verifies: [FR-AGG-05]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Broker stopped; feed a complete cycle
@@ -480,6 +524,7 @@ tests:
 
 - id: TS-029
   verifies: [FR-AGG-06]
+  kind:     negative
   tier:     host
   needs:    []
   does:      Reads the message from a set that decoded nothing, then from one holding a real zero
@@ -508,6 +553,7 @@ tests:
 
 - id: TS-108
   verifies: [FR-MTR-09]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several cycles
@@ -520,6 +566,7 @@ tests:
 
 - id: TS-109
   verifies: [FR-MTR-10]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim]
   does:      The same signal, with the simulator emitting an identity; watched for the meter serial
@@ -532,6 +579,7 @@ tests:
 
 - id: TS-110
   verifies: [FR-AGG-03, FR-AGG-06]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
   does:      Subscribes to the state topic at the broker and waits for live messages
@@ -544,6 +592,7 @@ tests:
 
 - id: TS-111
   verifies: [FR-HA-02, FR-HA-04]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
   does:      Reads the retained discovery configs from the broker
@@ -556,6 +605,7 @@ tests:
 
 - id: TS-030
   verifies: [FR-SUP-01]
+  kind:     standard
   tier:     target
   needs:    [board, wifi-ap]
   does:      Erase NVS, boot
@@ -568,6 +618,7 @@ tests:
 
 - id: TS-031
   verifies: [FR-SUP-02]
+  kind:     standard
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Credentials stored, boot
@@ -580,6 +631,7 @@ tests:
 
 - id: TS-032
   verifies: [FR-SUP-03]
+  kind:     negative
   tier:     bench
   needs:    [board, wifi-ap, wifi-ap-outage]
   does:      Remove the access point for 10 min with credentials stored
@@ -592,6 +644,7 @@ tests:
 
 - id: TS-033
   verifies: [FR-SUP-04]
+  kind:     negative
   tier:     bench
   needs:    [board, wifi-ap]
   does:      "`OPERATIONAL`; power off the access point for 10 min"
@@ -604,6 +657,7 @@ tests:
 
 - id: TS-034
   verifies: [FR-SUP-05]
+  kind:     negative
   tier:     bench
   needs:    [board, wifi-ap, wifi-ap-outage]
   does:      Deny association repeatedly; log attempt times
@@ -616,6 +670,7 @@ tests:
 
 - id: TS-035
   verifies: [FR-SUP-06]
+  kind:     standard
   tier:     bench
   needs:    [board, button-gpio, wifi-ap]
   does:      "`OPERATIONAL`; hold the button 5 s"
@@ -628,6 +683,7 @@ tests:
 
 - id: TS-036
   verifies: [FR-SUP-07]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Enter Provisioning with credentials stored; wait 300 s
@@ -640,6 +696,7 @@ tests:
 
 - id: TS-037
   verifies: [FR-SUP-08]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Broker stopped; feed a cycle
@@ -652,6 +709,7 @@ tests:
 
 - id: TS-038
   verifies: [FR-SUP-09]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Boot with each of SSID, passphrase and broker host absent in turn
@@ -664,6 +722,7 @@ tests:
 
 - id: TS-039
   verifies: [FR-SUP-10]
+  kind:     deviation
   tier:     bench
   needs:    [board, mqtt-broker, wifi-ap]
   does:      Provision with MQTT username and password both left blank
@@ -676,6 +735,7 @@ tests:
 
 - id: TS-040
   verifies: [NFR-SUP-01]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Stop the broker for 2 min, then restart it
@@ -688,6 +748,7 @@ tests:
 
 - id: TS-041
   verifies: [FR-MTR-11]
+  kind:     standard
   tier:     target
   needs:    [board, mbus-sim]
   does:      Boot with a DLMS key stored, then with the slot empty
@@ -701,6 +762,7 @@ tests:
 # The head of every burst is lost, and that one fact cost the whole telegram.
 - id: TS-025
   verifies: [FR-MTR-06]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Emits the telegram with no lead-in, then with 6, 12 and 24 bytes of it
@@ -728,6 +790,7 @@ tests:
 
 - id: TS-042
   verifies: [FR-MTR-12]
+  kind:     deviation
   tier:     bench
   needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
   does:      Simulator `silence 60`
@@ -740,6 +803,7 @@ tests:
 
 - id: TS-043
   verifies: [FR-MTR-13]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator `fault fcs 2`; read the counter on the console
@@ -752,6 +816,7 @@ tests:
 
 - id: TS-044
   verifies: [FR-MTR-14]
+  kind:     negative
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Simulator `fault noise 200`, then silence
@@ -764,6 +829,7 @@ tests:
 
 - id: TS-045
   verifies: [FR-HA-01]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim, mqtt-broker]
   does:      Fresh broker; connect the DUT; feed one cycle
@@ -776,6 +842,7 @@ tests:
 
 - id: TS-047
   verifies: [FR-HA-03]
+  kind:     deviation
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Connect with no meter data
@@ -788,6 +855,7 @@ tests:
 
 - id: TS-049
   verifies: [FR-HA-06]
+  kind:     negative
   tier:     bench
   needs:    [board]
   does:      Cut DUT power while connected
@@ -800,6 +868,7 @@ tests:
 
 - id: TS-050
   verifies: [FR-HA-07]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Subscribe fresh after the DUT is offline
@@ -812,6 +881,7 @@ tests:
 
 - id: TS-051
   verifies: [FR-HA-08]
+  kind:     standard
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Read the client identifier the broker sees
@@ -824,6 +894,7 @@ tests:
 
 - id: TS-052
   verifies: [NFR-HA-01]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim, mqtt-broker]
   does:      Timestamp cycle boundary and broker receipt
@@ -836,6 +907,7 @@ tests:
 
 - id: TS-104
   verifies: [FR-PRV-02, FR-SEC-03]
+  kind:     security
   tier:     host
   needs:    []
   does:      Derives the SoftAP name and passphrase from a known MAC, and from a MAC one bit apart
@@ -848,6 +920,7 @@ tests:
 
 - id: TS-053
   verifies: [FR-PRV-01]
+  kind:     security
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
@@ -860,6 +933,7 @@ tests:
 
 - id: TS-054
   verifies: [FR-PRV-02]
+  kind:     security
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
@@ -872,6 +946,7 @@ tests:
 
 - id: TS-055
   verifies: [FR-PRV-03]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Associate and request any hostname
@@ -884,6 +959,7 @@ tests:
 
 - id: TS-056
   verifies: [FR-PRV-04]
+  kind:     deviation
   tier:     target
   needs:    [board, button-gpio]
   does:      Hold the button through a reset
@@ -896,6 +972,7 @@ tests:
 
 - id: TS-057
   verifies: [FR-PRV-05]
+  kind:     standard
   tier:     bench
   needs:    [board, mbus-sim]
   does:      Submit configuration; power-cycle
@@ -908,6 +985,7 @@ tests:
 
 - id: TS-058
   verifies: [FR-PRV-06]
+  kind:     deviation
   tier:     bench
   needs:    [board]
   does:      Enter Provisioning, wait for timeout without submitting
@@ -920,6 +998,7 @@ tests:
 
 - id: TS-059
   verifies: [FR-PRV-07]
+  kind:     standard
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Enter Provisioning with at least one access point in range
@@ -932,6 +1011,7 @@ tests:
 
 - id: TS-060
   verifies: [NFR-PRV-01]
+  kind:     standard
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Enter Provisioning, then associate with the SoftAP
@@ -944,6 +1024,7 @@ tests:
 
 - id: TS-061
   verifies: [FR-PRV-08]
+  kind:     deviation
   tier:     bench
   needs:    [board, mqtt-broker, wifi-ap]
   does:      Enter `homeassistant.local` as the broker address at the portal
@@ -956,6 +1037,7 @@ tests:
 
 - id: TS-106
   verifies: [FR-OTA-01, FR-OTA-02]
+  kind:     negative
   tier:     host
   needs:    []
   does:      Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an overlong string
@@ -968,6 +1050,7 @@ tests:
 
 - id: TS-062
   verifies: [FR-OTA-01]
+  kind:     standard
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Publish a valid URL to the command topic
@@ -980,6 +1063,7 @@ tests:
 
 - id: TS-063
   verifies: [FR-OTA-02]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker, ota-relay]
   does:      Run 24 h with a newer release published
@@ -992,6 +1076,7 @@ tests:
 
 - id: TS-064
   verifies: [FR-OTA-03]
+  kind:     security
   tier:     bench
   needs:    [board, ota-relay]
   does:      Serve an image over TLS with an untrusted certificate
@@ -1004,6 +1089,7 @@ tests:
 
 - id: TS-065
   verifies: [FR-OTA-04]
+  kind:     standard
   tier:     bench
   needs:    [board, ota-relay]
   does:      Trigger an update while running from one OTA slot
@@ -1016,6 +1102,7 @@ tests:
 
 - id: TS-066
   verifies: [FR-OTA-05]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker, ota-relay]
   does:      Update to an image that boots but cannot reach the broker
@@ -1028,6 +1115,7 @@ tests:
 
 - id: TS-067
   verifies: [FR-OTA-06]
+  kind:     deviation
   tier:     bench
   needs:    [board, mqtt-broker, ota-relay]
   does:      Update while the meter is silent
@@ -1040,6 +1128,7 @@ tests:
 
 - id: TS-068
   verifies: [FR-OTA-07]
+  kind:     negative
   tier:     bench
   needs:    [board, ota-relay]
   does:      Update, then reset before validation completes
@@ -1052,6 +1141,7 @@ tests:
 
 - id: TS-069
   verifies: [FR-OTA-08]
+  kind:     standard
   tier:     bench
   needs:    [board, mqtt-broker, ota-relay]
   does:      Feed meter cycles throughout a download
@@ -1064,6 +1154,7 @@ tests:
 
 - id: TS-070
   verifies: [FR-OTA-09]
+  kind:     negative
   tier:     bench
   needs:    [board, ota-relay, wifi-ap]
   does:      Disable the access point mid-download
@@ -1076,6 +1167,7 @@ tests:
 
 - id: TS-071
   verifies: [NFR-OTA-01]
+  kind:     standard
   tier:     bench
   needs:    [board, ha-bridge]
   does:      Read the device entry in Home Assistant after a session is established
@@ -1088,6 +1180,7 @@ tests:
 
 - id: TS-105
   verifies: [FR-LED-05]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Reads every pair of indications against each other, and each one against FSD 11.3's table
@@ -1100,6 +1193,7 @@ tests:
 
 - id: TS-072
   verifies: [FR-LED-01]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Drive the DUT through every supervisor state
@@ -1125,6 +1219,7 @@ tests:
 
 - id: TS-073
   verifies: [FR-LED-02]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Drive the DUT through every supervisor state
@@ -1142,6 +1237,7 @@ tests:
 
 - id: TS-074
   verifies: [FR-LED-03]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Drive the DUT through every supervisor state
@@ -1159,6 +1255,7 @@ tests:
 
 - id: TS-075
   verifies: [FR-LED-04]
+  kind:     standard
   tier:     bench
   needs:    [board, ota-relay]
   does:      Trigger an OTA; observe from command to reboot
@@ -1176,6 +1273,7 @@ tests:
 
 - id: TS-076
   verifies: [FR-LED-05]
+  kind:     standard
   tier:     bench
   needs:    [board]
   does:      Drive the DUT through every supervisor state
@@ -1193,6 +1291,7 @@ tests:
 
 - id: TS-102
   verifies: [FR-NVS-02]
+  kind:     negative
   tier:     host
   needs:    []
   does:      Judges every malformed stored record the flash can hand back - empty, overlong, no scheme, bad hostname
@@ -1205,6 +1304,7 @@ tests:
 
 - id: TS-077
   verifies: [FR-NVS-01]
+  kind:     standard
   tier:     target
   needs:    [board]
   does:      Provision the device, then dump the NVS partition
@@ -1217,6 +1317,7 @@ tests:
 
 - id: TS-078
   verifies: [FR-NVS-02]
+  kind:     negative
   tier:     target
   needs:    [board]
   does:      Corrupt the NVS partition; boot
@@ -1229,6 +1330,7 @@ tests:
 
 - id: TS-079
   verifies: [FR-NVS-03]
+  kind:     negative
   tier:     bench
   needs:    [board, power-cycle]
   does:      Cut power 100 times during normal operation
@@ -1241,6 +1343,7 @@ tests:
 
 - id: TS-081
   verifies: [FR-WDT-01]
+  kind:     negative
   tier:     target
   needs:    [board]
   does:      Stall one watchdog-subscribed task
@@ -1253,6 +1356,7 @@ tests:
 
 - id: TS-082
   verifies: [FR-WDT-02]
+  kind:     negative
   tier:     target
   needs:    [board]
   does:      Command a test build into an infinite loop in one task
@@ -1265,6 +1369,7 @@ tests:
 
 - id: TS-083
   verifies: [FR-WDT-03]
+  kind:     deviation
   tier:     bench
   needs:    [board, mqtt-broker, ota-relay]
   does:      Feed no meter data for 30 min while connected; separately, run a full OTA
@@ -1277,6 +1382,7 @@ tests:
 
 - id: TS-084
   verifies: [FR-WDT-04]
+  kind:     standard
   tier:     target
   needs:    [board]
   does:      Force a watchdog reset; read the console
@@ -1289,6 +1395,7 @@ tests:
 
 - id: TS-085
   verifies: [FR-WDT-05]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker, wifi-ap, wifi-ap-outage]
   does:      Drop the access point, stop the broker, and silence the meter, each in turn
@@ -1301,6 +1408,7 @@ tests:
 
 - id: TS-086
   verifies: [FR-ID-01]
+  kind:     negative
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Publish discovery for a known meter, then present a different serial
@@ -1313,6 +1421,7 @@ tests:
 
 - id: TS-087
   verifies: [FR-ID-02]
+  kind:     standard
   tier:     bench
   needs:    [board, mqtt-broker]
   does:      Inspect the client identifier and the operational topic prefix
@@ -1325,6 +1434,7 @@ tests:
 
 - id: TS-088
   verifies: [FR-ID-03]
+  kind:     deviation
   tier:     bench
   needs:    [board, second-board]
   does:      Record entity IDs; swap in a second gPlug on the same meter
@@ -1337,6 +1447,7 @@ tests:
 
 - id: TS-089
   verifies: [FR-SEC-01]
+  kind:     security
   tier:     bench
   needs:    [board, ota-relay]
   does:      Serve an image with a self-signed certificate
@@ -1349,6 +1460,7 @@ tests:
 
 - id: TS-090
   verifies: [FR-SEC-02]
+  kind:     security
   tier:     bench
   needs:    [board, ota-relay]
   does:      Serve an image with an expired certificate
@@ -1361,6 +1473,7 @@ tests:
 
 - id: TS-091
   verifies: [FR-SEC-03]
+  kind:     security
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Scan for the SoftAP while Provisioning is active
@@ -1373,6 +1486,7 @@ tests:
 
 - id: TS-092
   verifies: [FR-SEC-04]
+  kind:     security
   tier:     bench
   needs:    [board, wifi-ap]
   does:      Request every portal endpoint after provisioning
@@ -1385,6 +1499,7 @@ tests:
 
 - id: TS-093
   verifies: [NFR-SEC-01]
+  kind:     security
   tier:     target
   needs:    [board, wifi-ap]
   does:      Dump the flash of a provisioned device
@@ -1397,6 +1512,7 @@ tests:
 
 - id: TS-094
   verifies: [FR-BLD-01]
+  kind:     standard
   tier:     other
   needs:    []
   does:      Build at a tagged commit
@@ -1409,6 +1525,7 @@ tests:
 
 - id: TS-095
   verifies: [FR-BLD-02]
+  kind:     standard
   tier:     other
   needs:    []
   does:      Build an untagged commit
@@ -1420,6 +1537,7 @@ tests:
   when:      2026-08-05T14:20Z
 - id: TS-096
   verifies: [FR-BLD-03]
+  kind:     standard
   tier:     other
   needs:    []
   does:      Inspect the production binary and the variant-selection mechanism
@@ -1431,6 +1549,7 @@ tests:
   when:      2026-08-05T14:20Z
 - id: TS-097
   verifies: [FR-BLD-04]
+  kind:     negative
   tier:     other
   needs:    []
   does:      Search the production binary for the embedded capture data
@@ -1442,6 +1561,7 @@ tests:
   when:      2026-08-05T14:20Z
 - id: TS-098
   verifies: [FR-BLD-05]
+  kind:     standard
   tier:     other
   needs:    []
   does:      Build the simulated variant
@@ -1454,6 +1574,7 @@ tests:
 
 - id: TS-099
   verifies: [FR-BLD-06]
+  kind:     standard
   tier:     bench
   needs:    [board, ha-bridge]
   does:      Run the simulated build against a Home Assistant instance
@@ -1466,6 +1587,7 @@ tests:
 
 - id: TS-100
   verifies: [FR-BLD-07]
+  kind:     standard
   tier:     other
   needs:    []
   does:      Inspect `.github/workflows/`
@@ -1477,6 +1599,7 @@ tests:
   when:      2026-08-05T14:20Z
 - id: TS-101
   verifies: [FR-BLD-08]
+  kind:     negative
   tier:     other
   needs:    []
   does:      Push to a branch without a tag
@@ -1488,6 +1611,7 @@ tests:
   when:      2026-08-05T14:20Z
 - id: TS-003
   verifies: [FR-AGG-02]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Decodes a capture whose serial spans a General Block Transfer boundary
@@ -1500,6 +1624,7 @@ tests:
 
 - id: TS-004
   verifies: [FR-DEC-03]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Decodes a capture with a known true value and its scaler
@@ -1512,6 +1637,7 @@ tests:
 
 - id: TS-005
   verifies: [FR-DEC-04]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Decodes a cumulative register above 16,777,216
@@ -1524,6 +1650,7 @@ tests:
 
 - id: TS-006
   verifies: [FR-AGG-01]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Feeds frames separated by 1999 ms, then 2000 ms, then 2001 ms
@@ -1536,6 +1663,7 @@ tests:
 
 - id: TS-008
   verifies: [FR-HA-02, FR-HA-04]
+  kind:     standard
   tier:     host
   needs:    []
   does:      Builds the Home Assistant discovery payloads

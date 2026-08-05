@@ -47,6 +47,32 @@ Layer mapping: **L0** is exercised transitively and has no host tests of its own
 empty cells there are expected, not gaps. **L1** interfaces split, with pure cores
 at host and wire behaviour at target or bench. **L2** is host throughout.
 
+## What to build, in what order
+
+Every test carries a `kind` in the plan, and the balance between them is a design
+property worth watching rather than an accident.
+
+| Kind | Is | Example |
+|---|---|---|
+| **standard** | The ordinary case — the product doing its job | A telegram becomes a published measurement |
+| **deviation** | Still normal, just not the simplest case | Either serial length; a quiet meter; waking mid-transmission |
+| **negative** | A fault or malfunction is injected | Corrupted checksum, stopped broker, cut power |
+| **security** | Derived from the threat profile, not from a feature | An untrusted certificate aborts the download |
+
+**Build them in that order, and keep the volume tilted towards the first two.**
+Write the standard case first even when it feels too obvious to write down, then
+the variations, and only then the negatives that matter most.
+
+A suite heavy on negatives is a suite that has never checked the product works.
+Negatives accumulate one at a time, each individually justified, and nobody
+notices the ordinary case is missing — this project reached 108 declared tests
+with the standard meter journey still unwritten, and a defect that stopped the
+device publishing entirely was found sideways through an unrelated test that
+could not read the device's topic name.
+
+`tools/report.py` prints the balance on every run and says so when fault-finding
+outweighs function.
+
 ## Rules
 
 - **Every Must/Should rule has a test case.** A rule with no case is an untested

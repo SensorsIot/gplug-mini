@@ -92,10 +92,29 @@ def gaps(reqs, caps, tests):
         print(f'  {r:12} {reqs[r][1][:70]}')
 
 
+def balance(tests):
+    """The four kinds and their share.
+
+    Printed on every report because the tilt is what goes wrong quietly:
+    negatives accumulate one defect at a time, each of them justified, and
+    nobody notices the standard case was never written. This plan reached 108
+    tests with the standard meter journey still unwritten.
+    """
+    c = collections.Counter(t.get('kind', '?') for t in tests)
+    total = sum(c.values())
+    print('balance of test kinds')
+    for k in ('standard', 'deviation', 'negative', 'security'):
+        print(f'  {k:10} {c[k]:4}  {100 * c[k] // total:>3}%')
+    if c['standard'] + c['deviation'] < c['negative'] + c['security']:
+        print('  ** more fault-finding than function — the standard case is under-tested')
+    print()
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--tier', action='store_true')
     ap.add_argument('--gaps', action='store_true')
     a = ap.parse_args()
     reqs, caps, tests = load()
+    balance(tests)
     (by_tier if a.tier else gaps if a.gaps else by_requirement)(reqs, caps, tests)
