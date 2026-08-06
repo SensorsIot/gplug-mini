@@ -59,6 +59,21 @@ def portal_ssid(dut, seconds=60):
     return match.group(1)
 
 
+def scan_for(wb, ssid, tries=4):
+    """Find `ssid` in a bench scan, retrying — one sweep is not evidence.
+
+    A single scan misses a beacon often enough to fail a board that is
+    broadcasting perfectly: TS-091 failed with "was not seen in a scan at all"
+    moments after TS-054 found the very same network with the same call.
+    """
+    for _ in range(tries):
+        found = [n for n in wb.scan().get("networks", []) if n.get("ssid") == ssid]
+        if found:
+            return found[0]
+        time.sleep(4)
+    return None
+
+
 def derived_passphrase(ssid):
     """FR-PRV-02/FR-SEC-03: `gplug-254a75` -> `gplug254a75`."""
     return "gplug" + ssid.split("-", 1)[1]
@@ -177,9 +192,9 @@ def test_ts054_the_portal_announces_a_derivable_network(unprovisioned, dut, wb):
     assert re.fullmatch(r"gplug-[0-9a-f]{6}", ssid), \
         f"{ssid!r} is not the documented gplug-<6 hex> shape"
 
-    found = [n for n in wb.scan().get("networks", []) if n.get("ssid") == ssid]
+    found = scan_for(wb, ssid)
     assert found, f"{ssid} is announced on serial but not on the air"
-    print(f"  in scan: {found[0]}")
+    print(f"  in scan: {found}")
 
 
 @pytest.mark.fast
@@ -191,10 +206,10 @@ def test_ts091_the_portal_is_wpa2_not_open(unprovisioned, dut, wb):
     one moment the device handles a credential it was not given.
     """
     ssid = portal_ssid(dut)
-    found = [n for n in wb.scan().get("networks", []) if n.get("ssid") == ssid]
-    assert found, f"{ssid} was not seen in a scan at all"
+    found = scan_for(wb, ssid)
+    assert found, f"{ssid} was not seen in any of 4 scans"
 
-    auth = str(found[0].get("auth", "")).upper()
+    auth = str(found.get("auth", "")).upper()
     print(f"\n  {ssid} auth={auth}")
     assert "WPA2" in auth, (
         f"the setup network is {auth or 'OPEN'} — anything typed into the form, "

@@ -258,7 +258,18 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # only on error, and the session state reaches the console through the
         # periodic diag line. Waiting 90 s for a phrase the device never emits
         # is how this step failed while the board sat there publishing.
-        dut.await_line(r"diag:.*broker=up", seconds=SESSION_TIMEOUT)
+        # Proven at the broker. The console is silent across the reboot that
+        # precedes this, and a device that has published to the broker has by
+        # definition established a session — reading its own claim adds nothing
+        # and fails when the console does.
+        deadline = time.monotonic() + SESSION_TIMEOUT
+        while time.monotonic() < deadline and not watch.messages:
+            time.sleep(3)
+        assert watch.messages, (
+            f"nothing from the device reached the broker in {SESSION_TIMEOUT}s, "
+            "so no MQTT session was established"
+        )
+        print(f"  session proven by {watch.messages[-1][1]}")
 
         mark = watch.mark()
         time.sleep(DEFERRAL_WINDOW)
