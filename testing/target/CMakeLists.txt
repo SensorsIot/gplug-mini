@@ -9,7 +9,12 @@
 #   idf.py -C testing/target build flash monitor
 #
 # Then, on the console: `run TS-014`, or `run all`.
+# The firmware's own `main` is deliberately NOT pulled in. These cases ask the
+# chip about itself — pad configuration, NVS behaviour, watchdog subscription —
+# and none of them needs our decoder. Including it dragged the dlms_parser
+# component into this build under different warning flags, where its printf
+# format specifiers are -Werror=format errors, and a third-party component's
+# warnings have no business failing a target-tier build.
 cmake_minimum_required(VERSION 3.16)
-set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../main")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(gplug-target-tests)
