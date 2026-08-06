@@ -206,11 +206,13 @@ capabilities:
       base_url: http://192.168.168.1:8080/firmware/
       upload_endpoint: POST /api/firmware/upload
     fixtures:
-      valid_image_url: null
+      valid_image_url: http://192.168.168.1:8080/firmware/gplug-mini/gplug-mini-valid.bin
       image_that_cannot_reach_broker_url: null
       self_signed_certificate_url: null
       expired_certificate_url: null
-      status: fixture URLs are assigned when the corresponding images and TLS endpoints are prepared
+      status: the valid image is uploaded to the workbench firmware store and served (2026-08-06). The remaining three are
+        not files that can be copied - a broker-incapable image needs its own build, and the two TLS cases need endpoints
+        presenting a self-signed and an expired certificate.
   physical-button:
     what: The actual GPIO9 device button, operated manually on the bench
     available: true
@@ -282,6 +284,12 @@ capabilities:
       deployment_wifi_ssid: null
       deployment_wifi_bssid: null
       comparison_tolerance: decision:TDD-003
+    notes: 'The installed Landis+Gyr E450, in the cabin. Not on the bench and not going to be: the user executes the field
+      cases manually and supplies the evidence (decided 2026-08-06). So WF-006, WF-007 and the field-tier atomic cases stay
+      in the plan with their contracts intact and are never expected to pass here - a bench run reporting them as blocked
+      is correct, and closing that gap by weakening them to something the lab can do would replace the only tier that can
+      invalidate the bench.'
+    execution: manual, by the user, at the installation
 actions:
   confirm_bench_ready:
     purpose: Verify the bench before drawing conclusions about the DUT.
