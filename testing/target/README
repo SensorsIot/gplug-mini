@@ -1,0 +1,12 @@
+Target-tier tests. One image; cases are selected by name over the console.
+
+    idf.py -C testing/target set-target esp32c3
+    idf.py -C testing/target build
+    # flash the coldflash set to the DUT slot, then over the console:
+    run TS-014      one case
+    run all         every case
+    list            what is here
+
+Output contract, which the bench harness relies on:
+    RESULT <id> PASS|FAIL  <detail>
+    DONE <n> checks        <- positive completion marker; absence means a crash

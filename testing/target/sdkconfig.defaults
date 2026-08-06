@@ -1,0 +1,20 @@
+CONFIG_IDF_TARGET="esp32c3"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# The console is the test runner's interface, so it has to be the same one the
+# product uses: native USB serial/JTAG, no second stream on the meter UART.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Unity ships with ESP-IDF. No framework is fetched.
+CONFIG_UNITY_ENABLE_COLOR=n
+CONFIG_UNITY_ENABLE_IDF_TEST_RUNNER=n
+
+# The same 8 KB main stack the firmware needs for recursive AXDR decoding, so a
+# stack fault here means the same thing it would mean in production.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# The watchdog cases drive it deliberately; the timeout is short so a stall test
+# does not cost a minute each time.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+CONFIG_ESP_TASK_WDT_INIT=n

@@ -190,3 +190,28 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The target-tier test image. Built on every push for the same reason the
+  # firmware is: a test suite that only compiles on someone's laptop is a suite
+  # that stops compiling. It is not run here — it needs the chip — but a build
+  # failure is caught the moment it is introduced rather than at the bench.
+  target-tests:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build the target-tier test image
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py -C testing/target set-target esp32c3
+          idf.py -C testing/target build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: target-tests
+          path: |
+            testing/target/build/gplug-target-tests.bin
+            testing/target/build/bootloader/bootloader.bin
+            testing/target/build/partition_table/partition-table.bin
