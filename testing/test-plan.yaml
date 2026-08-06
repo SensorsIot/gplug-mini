@@ -1117,10 +1117,10 @@ test_cases:
   does: Credentials stored, boot
   expected: Association attempt to the stored SSID
   procedure: P-NETWORK
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-032
   kind: atomic
   scenario: negative
@@ -1150,10 +1150,10 @@ test_cases:
   does: '`OPERATIONAL`; power off the access point for 10 min'
   expected: Device retries throughout
   procedure: P-NETWORK
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-034
   kind: atomic
   scenario: negative
@@ -1215,10 +1215,10 @@ test_cases:
   does: Broker stopped; feed a cycle
   expected: Decode occurs and is logged
   procedure: P-METER
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-038
   kind: atomic
   scenario: negative
@@ -1264,10 +1264,10 @@ test_cases:
   does: Stop the broker for 2 min, then restart it
   expected: A session is re-established within 60 s of the broker accepting connections
   procedure: P-METER
-  status: not done
+  status: failed
   reason: test not written
-  commit: null
-  when: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-041
   kind: atomic
   scenario: standard
@@ -1363,10 +1363,10 @@ test_cases:
   does: Fresh broker; connect the DUT; feed one cycle
   expected: One retained config per Appendix B entity present in the cycle
   procedure: P-METER
-  status: not done
-  reason: unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication is unproven
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-047
   kind: atomic
   scenario: deviation
@@ -1379,10 +1379,10 @@ test_cases:
   does: Connect with no meter data
   expected: No discovery topics
   procedure: P-METER
-  status: not done
+  status: failed
   reason: test not written
-  commit: null
-  when: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-049
   kind: atomic
   scenario: negative
@@ -1409,10 +1409,10 @@ test_cases:
   does: Subscribe fresh after the DUT is offline
   expected: No measurement state delivered
   procedure: P-METER
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-051
   kind: atomic
   scenario: standard
@@ -1442,10 +1442,10 @@ test_cases:
   does: Timestamp cycle boundary and broker receipt
   expected: Delta ≤ 2 s
   procedure: P-METER
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-104
   kind: atomic
   scenario: security
@@ -2087,10 +2087,10 @@ test_cases:
   does: Inspect the client identifier and the operational topic prefix
   expected: Both contain the device MAC
   procedure: P-METER
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-088
   kind: atomic
   scenario: deviation
