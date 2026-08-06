@@ -400,31 +400,62 @@ class Sim:
     # does not explain or excuse it — see TS-025, which is that question.
     PREAMBLE = 8
 
-    def known_state(self):
-        """mode 3, no fault, identity emitted, lead-in present.
+    # What the rig must be in before any test reads a result from the board.
+    WANTED = {
+        "fault": "none",
+        "gap": "0",
+        "silence": "0",
+        "identity": "ldn",
+        "serial": "8",
+    }
+    SETTERS = {
+        "fault": "fault none",
+        "gap": "gap 0",
+        "silence": "silence 0",
+        "identity": "identity ldn",
+        "serial": "serial 8",
+    }
 
-        Asserted rather than assumed. It has been found set to `identity none`,
-        which makes every discovery test fail for a reason that has nothing to
-        do with the device — and the failure looks like the firmware never
-        learning the meter serial, which is a real defect elsewhere.
+    def known_state(self, attempts=4):
+        """Drive the simulator to a known state, verifying each field.
+
+        Issued-and-assumed is not good enough here. The console interleaves the
+        simulator's own emit log — one line every five seconds — with command
+        replies, and a directive can be swallowed in that traffic. On 2026-08-06
+        one lost `identity ldn` left the rig emitting no meter serial for a whole
+        run: the board never learned a serial, never published, and seven tests
+        failed or errored describing a device that was working perfectly.
+
+        So each field is set, read back, and set again if it did not take. What
+        cannot be driven into place after several attempts is a rig fault and
+        says so, rather than being inherited by whatever runs next.
         """
-        # Every field the simulator's `status` reports, not only the ones a test
-        # is about to change. TS-016 switches to `serial 16` and the next test
-        # then sees a longer telegram than it was written for — which is how a
-        # link-health check that passed at 96% failed on the following run for a
-        # reason that had nothing to do with the board.
-        for c in ("fault none", "gap 0", "identity ldn", self.NORMAL_MODE, "serial 8",
-                  f"preamble {self.PREAMBLE} 0xFF"):
-            self.command(c)
+        for attempt in range(attempts):
+            state = self.status()
+            wrong = {k: state.get(k) for k, want in self.WANTED.items()
+                     if state.get(k) != want}
+            mode_ok = str(state.get("mode", "")).startswith(self.NORMAL_MODE[-1])
+            pre_ok = str(state.get("preamble", "")).startswith(str(self.PREAMBLE))
+            if not wrong and mode_ok and pre_ok:
+                return state
+
+            if attempt:
+                print(f"\n  simulator still {wrong or 'mis-set'} — retrying "
+                      f"({attempt + 1}/{attempts})")
+            for field in wrong:
+                self.command(self.SETTERS[field])
+            if not mode_ok:
+                self.command(self.NORMAL_MODE)
+            if not pre_ok:
+                self.command(f"preamble {self.PREAMBLE} 0xFF")
+            time.sleep(1)
+
         state = self.status()
-        assert state.get("fault") == "none", f"simulator still has {state.get('fault')} armed"
-        assert state.get("identity") != "none", "simulator is emitting no identity"
-        assert state.get("serial") == "8", f"simulator serial length is {state.get('serial')}"
-        assert state.get("mode", "").startswith(self.NORMAL_MODE[-1]), \
-            f"simulator is in mode {state.get('mode')}"
-        assert state.get("preamble", "").startswith(str(self.PREAMBLE)), \
-            f"simulator preamble is {state.get('preamble')}"
-        return state
+        pytest.fail(
+            "the simulator would not reach a known state after "
+            f"{attempts} attempts: {state}. This is a rig fault — nothing read "
+            "from the board while it persists says anything about the firmware."
+        )
 
     def close(self):
         try:
