@@ -1,0 +1,57 @@
+{
+  "workflow": "WF-001",
+  "validates": "AC-1",
+  "steps": [
+    {
+      "step": "arrange",
+      "detail": "simulator on identity none, retained discovery cleared",
+      "at": 1786049089.6800268
+    },
+    {
+      "step": "factory boot",
+      "detail": "NVS blanked by the fixture",
+      "at": 1786049098.3982363
+    },
+    {
+      "step": "open the portal",
+      "detail": "",
+      "at": 1786049112.515015
+    },
+    {
+      "step": "submit the form",
+      "detail": "ssid=wb-7cb1c2 broker=mqtt://192.168.0.168:1883",
+      "at": 1786049126.094947
+    },
+    {
+      "step": "join the configured network",
+      "detail": "",
+      "at": 1786049131.6867828
+    },
+    {
+      "step": "broker session",
+      "detail": "meter still on identity none",
+      "at": 1786049160.3578515
+    },
+    {
+      "step": "restore the meter identity",
+      "detail": "",
+      "at": 1786049190.574191
+    }
+  ],
+  "cleared_retained_configs": [],
+  "portal_ssid": "gplug-98012d",
+  "portal_auth": "WPA2",
+  "portal_lease": "192.168.4.2",
+  "save_status": 200,
+  "connected": {
+    "stations": [
+      {
+        "mac": "94:a9:90:98:01:2c",
+        "ip": "192.168.168.13"
+      }
+    ]
+  },
+  "cfg_source": "console silent",
+  "configs_while_anonymous": [],
+  "discovery_topics": []
+}

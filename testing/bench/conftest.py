@@ -150,9 +150,23 @@ def pytest_runtest_setup(item):
 
 @pytest.fixture(scope="session")
 def wb(request):
-    driver = WorkbenchDriver(request.config.getoption("--wt-url"))
-    driver.open()
-    driver.ping()
+    """The workbench, or a skip that names the real problem.
+
+    This bench has dropped off the network twice in one evening — every port
+    refused, `No route to host` — and when it does, every test that touches it
+    fails with a different transport error. None of those failures is about the
+    firmware, and a run full of them reads like a broken device.
+
+    A precondition that cannot be met is `not done`, never `failed`.
+    """
+    url = request.config.getoption("--wt-url")
+    driver = WorkbenchDriver(url)
+    try:
+        driver.open()
+        driver.ping()
+    except Exception as e:              # noqa: BLE001 — any failure to reach it is the same result
+        pytest.skip(f"the workbench at {url} is unreachable ({e}); nothing can "
+                    "be learned about the device while it is gone")
     yield driver
     driver.close()
 
@@ -357,20 +371,35 @@ class Sim:
                 self._reopen()
 
     def _reopen(self):
+        """Reopen, or say plainly that the bench is gone.
+
+        Returning silently with a closed port turned one dropped link into
+        `PortNotOpenError` on every later call, and five tests errored quoting a
+        serial exception that said nothing about why. If the proxy cannot be
+        reached at all the bench is down, and that is a precondition failure —
+        not a result about the firmware.
+        """
         import serial
         try:
             self.port.close()
         except Exception:
             pass
         time.sleep(2)
+        last = None
         for _ in range(5):
             try:
                 self.port = serial.serial_for_url(
                     f"rfc2217://{self._host}:{self._port_no}",
                     baudrate=self.CONSOLE_BAUD, timeout=2)
                 return
-            except Exception:
-                time.sleep(2)
+            except Exception as e:      # noqa: BLE001
+                last = e
+                time.sleep(3)
+        pytest.skip(
+            f"the simulator console at {self._host}:{self._port_no} cannot be "
+            f"reopened ({last}). The bench is unreachable, so nothing here would "
+            "say anything about the device."
+        )
 
     def status(self):
         """The `status` line as a dict of its key=value fields."""
