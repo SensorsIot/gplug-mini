@@ -25,3 +25,19 @@ CONFIG_GPLUG_SIM_METER=n
 # The firmware logs its remaining headroom after each cycle so this stays a
 # measured number rather than a guess.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Radio at 15 dBm rather than the 20 dBm default — a third of the transmit
+# power, and roughly that much less peak current when the PHY comes up.
+#
+# Measured 2026-08-06: the board reset 3-7 times a minute, every reset an
+# ESP_RST_BROWNOUT, and the detector message cut into the phy_init log line as
+# it printed — the supply collapsed at the moment the RF front end powered on.
+# The brownout detector is at level 7, the least sensitive setting the C3 has
+# (~2.5 V), so this was a real collapse and not a twitchy threshold.
+#
+# This lowers the current the supply has to deliver; it does not fix a supply
+# that cannot deliver it. The rail should still be measured on a known-good
+# source — if a board browns out at 20 dBm it is marginal at 15, and a meter
+# cabinet is a worse place to discover that than a bench. 15 dBm still leaves
+# ample margin for a domestic access point a few metres away.
+CONFIG_ESP_PHY_MAX_WIFI_TX_POWER=15
