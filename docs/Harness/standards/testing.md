@@ -1033,6 +1033,23 @@ point of this tier is that the chip is answering about itself.
 image and are selected by name over serial, so the five-minute build-and-upload
 cost is paid per change, not per test.
 
+The image is `testing/target/`, built with `idf.py -C testing/target build` and
+by CI on every push. It deliberately does NOT include the firmware's `main`
+component: these cases ask the chip about itself, and pulling the application in
+would make a target failure name the wrong thing — as well as dragging a
+third-party component's warnings into a build that has nothing to do with them.
+
+Its output contract is two lines and both are load-bearing:
+
+```text
+RESULT <id> PASS|FAIL  <detail>
+DONE <n> checks
+```
+
+`DONE` is the positive completion marker. A board that crashes mid-case prints
+nothing at all, so the absence of FAIL is not a pass — the harness requires the
+marker before believing any result in the run.
+
 **Steps** — send the case name; read until the run announces it finished and how
 many checks it made.
 
