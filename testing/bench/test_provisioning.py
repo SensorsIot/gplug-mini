@@ -116,6 +116,50 @@ def decode_body(response):
         return str(raw)
 
 
+def ensure_provisioned(wb, dut, seconds=180):
+    """Leave the device configured and connected, whatever happened before.
+
+    Any test that blanks NVS owes this to the next one. A device left in its
+    portal reports no meter cycles at all, so the tests behind it fail with "the
+    meter link is silent" — describing a rig they were handed rather than
+    anything they set out to measure. On 2026-08-06 one workflow that failed at
+    an HTTP timeout took the whole bread-and-butter phase down that way.
+
+    Best effort by design: it returns whether the device is back in service, and
+    the caller decides. Raising here would replace one misleading failure with
+    another.
+    """
+    try:
+        if _looks_operational(dut):
+            return True
+        ssid = portal_ssid(dut, seconds=90)
+        join_portal(wb, ssid, derived_passphrase(ssid))
+        status, _body = post_form(wb, {
+            "ssid": BENCH_SSID, "pass": BENCH_PASS,
+            "broker": BROKER_URI.replace(":", "%3A").replace("/", "%2F"),
+            "host": "",
+        })
+        wb.sta_leave()
+        if not (wb.ap_status() or {}).get("active"):
+            wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+        if status != 200:
+            return False
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if _looks_operational(dut):
+                return True
+            time.sleep(5)
+        return False
+    except Exception as e:                # noqa: BLE001 — restoration must not mask the real result
+        print(f"  could not restore the device to service: {e}")
+        return False
+
+
+def _looks_operational(dut):
+    return any("state=operational" in l and "broker=up" in l
+               for l in dut.lines(seconds=12))
+
+
 # ── the tests ────────────────────────────────────────────────────────────────
 
 @pytest.mark.fast

@@ -544,6 +544,24 @@ def broker(wb):
     status = wb.mqtt_status()
     if not status.get("running"):
         wb.mqtt_start()
+
+    # And the access point, because a broker the device cannot route to is no
+    # broker at all. The provisioning fixture stops the AP so the bench radio is
+    # free to scan for the device's own SoftAP, and a portal test that fails
+    # before it restarts the AP leaves every later test facing a device that is
+    # provisioned, correct, and unable to reach anything — reporting itself as
+    # `disconnected from wb-7cb1c2, reason 201`, which reads as a firmware
+    # fault. Measured on 2026-08-06: three bread-and-butter tests regressed
+    # exactly this way after passing twice.
+    if not (wb.ap_status() or {}).get("active"):
+        wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+        # The device is in backoff, capped at 30 s (FR-SUP-05), so give it time
+        # to notice the network exists again before anything reads a result.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if (wb.ap_status() or {}).get("stations"):
+                break
+            time.sleep(3)
     return wb
 
 

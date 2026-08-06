@@ -42,8 +42,8 @@ from conftest import (
     BENCH_HOST, BENCH_PASS, BENCH_SSID, BROKER_URI, MqttWatch,
 )
 from test_provisioning import (
-    FORM_HEADERS, PORTAL_ADDR, derived_passphrase, get_page, join_portal,
-    portal_ssid, post_form,
+    FORM_HEADERS, PORTAL_ADDR, derived_passphrase, ensure_provisioned, get_page,
+    join_portal, portal_ssid, post_form,
 )
 
 # Phase 0: this is where a device's life starts, and everything downstream reads
@@ -388,6 +388,14 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
 
     finally:
         watch.close()
+        # This workflow blanks NVS to start from factory. If it did not get as
+        # far as configuring the device again, it owes the rest of the suite a
+        # device that is back in service — otherwise every later test faces a
+        # board sitting in its portal, reporting no meter cycles, and fails
+        # describing a rig it was handed.
+        if not ensure_provisioned(wb, dut):
+            print("  WARNING: the device is not back in service — later results "
+                  "in this run are about the rig, not the firmware")
         path = _write_evidence(evidence)
         print(f"\n  evidence: {path}")
         try:
