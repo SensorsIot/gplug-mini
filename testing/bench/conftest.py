@@ -522,6 +522,20 @@ def dut_mac(dut):
 # blamed in turn before anyone read the BSSID in the board's own log.
 BENCH_SSID = "wb-7cb1c2"           # last 3 octets of the bench wlan0 d8:3a:dd:7c:b1:c2
 BENCH_PASS = "benchtest123"
+
+# Channel 1, and this is measured rather than chosen. On channel 6 the DUT
+# associated and was disassociated within seconds, over and over — reason 4
+# (association expired), reason 2 (auth expired), reason 201 — with zero
+# brownouts and zero resets across five minutes of uptime, so neither the supply
+# nor the firmware was ending it. Moved to channel 1 with the same image, it
+# joined at once and held for as long as it was watched.
+#
+# A scan says 2437 MHz carries a solar inverter's radio at -82 dBm and little
+# else, so this is not ordinary congestion; something on or near that channel is
+# hostile to this link in a way an AP list does not show. Channel 1 is busier on
+# paper — several neighbours at -45 dBm — and works anyway, which is the whole
+# point of measuring rather than reasoning about it.
+BENCH_CHANNEL = 1
 BENCH_HOST = "192.168.0.168"       # the bench on the LAN; NAT makes it reachable from the AP
 BROKER_URI = f"mqtt://{BENCH_HOST}:1883"
 BENCH_AP_GATEWAY = "192.168.168.1" # the bench as an AP; 192.168.4.1 belongs to the DUT's portal
@@ -554,7 +568,7 @@ def broker(wb):
     # fault. Measured on 2026-08-06: three bread-and-butter tests regressed
     # exactly this way after passing twice.
     if not (wb.ap_status() or {}).get("active"):
-        wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+        wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
         # The device is in backoff, capped at 30 s (FR-SUP-05), so give it time
         # to notice the network exists again before anything reads a result.
         deadline = time.monotonic() + 60

@@ -142,7 +142,7 @@ capabilities:
       ssid: wb-7cb1c2
       bssid: d8:3a:dd:7c:b1:c2
       passphrase: benchtest123
-      channel: 6
+      channel: 1
       subnet: 192.168.168.0/24
       gateway: 192.168.168.1
   wifi-ap-outage:

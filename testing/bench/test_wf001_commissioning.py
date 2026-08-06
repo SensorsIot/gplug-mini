@@ -39,7 +39,7 @@ import time
 import pytest
 
 from conftest import (
-    BENCH_HOST, BENCH_PASS, BENCH_SSID, BROKER_URI, MqttWatch,
+    BENCH_CHANNEL, BENCH_HOST, BENCH_PASS, BENCH_SSID, BROKER_URI, MqttWatch,
     wait_until_connected,
 )
 from test_provisioning import (
@@ -204,7 +204,7 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # The bench radio was a client of the DUT; it must now be the network the
         # DUT was told to join. It cannot be both — one radio.
         wb.sta_leave()
-        wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+        wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
 
         # ── 5. it joins the network it was given, not one with the same name ─
         wb.test_step("TS-031", "join configured AP", "the device appears on THIS bench's AP")

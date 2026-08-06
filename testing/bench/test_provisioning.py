@@ -30,7 +30,8 @@ import time
 
 import pytest
 
-from conftest import BENCH_PASS, BENCH_SSID, BROKER_URI, wait_until_connected
+from conftest import (BENCH_CHANNEL, BENCH_PASS, BENCH_SSID, BROKER_URI,
+                      wait_until_connected)
 from workbench_driver import CommandError
 
 pytestmark = [pytest.mark.provisioning, pytest.mark.disruptive]
@@ -141,7 +142,7 @@ def ensure_provisioned(wb, dut, seconds=180):
         })
         wb.sta_leave()
         if not (wb.ap_status() or {}).get("active"):
-            wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+            wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
         if status != 200:
             return False
         deadline = time.monotonic() + seconds
@@ -371,7 +372,7 @@ def test_ts057_a_valid_submission_survives_the_reboot(unprovisioned, dut, wb):
 
     # The device is rebooting into a network that must exist by the time it looks.
     wb.sta_leave()
-    wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
+    wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
 
     connected, how = wait_until_connected(wb, dut, seconds=120)
     print(f"  connected: {how}")
