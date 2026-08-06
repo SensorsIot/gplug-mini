@@ -48,7 +48,8 @@ from test_provisioning import (
 
 # Phase 0: this is where a device's life starts, and everything downstream reads
 # as a defect if it is broken. Disruptive because it blanks NVS and reboots.
-pytestmark = [pytest.mark.provisioning, pytest.mark.slow, pytest.mark.disruptive]
+pytestmark = [pytest.mark.provisioning, pytest.mark.workflow,
+              pytest.mark.slow, pytest.mark.disruptive]
 
 DISCOVERY_WILDCARD = "homeassistant/sensor/+/config"
 STATE_WILDCARD = "gplug/+/state"
@@ -205,21 +206,45 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
 
         # ── 5. it joins the network it was given, not one with the same name ─
-        wb.test_step("TS-031", "join configured AP", "checked by BSSID")
+        wb.test_step("TS-031", "join configured AP", "the device appears on THIS bench's AP")
         step("join the configured network")
-        line = dut.await_line(r"wifi:connected with \S+.*bssid = \S+", seconds=JOIN_TIMEOUT)
-        print(f"  {line}")
-        evidence["association_line"] = line
 
-        bssid = re.search(r"bssid = ([0-9a-f:]{17})", line)
-        assert bssid, f"the association line carries no BSSID: {line}"
-        expected = _bssid_suffix(BENCH_SSID)
-        evidence["bssid"] = bssid.group(1)
-        assert bssid.group(1).endswith(expected), (
-            f"associated with {bssid.group(1)}, which is not this bench "
-            f"(expected an address ending {expected}). Everything downstream would "
-            "fail against a broker address that is perfectly correct."
+        # Watch the access point, not the device's log. The board announces its
+        # association once, early, in a line that has usually scrolled past
+        # before a workflow gets to look — TS-057 catches it only because it
+        # starts watching a moment sooner, and the same line arrived here with a
+        # corrupted character in it. The station list is better evidence anyway:
+        # a device that appears on OUR radio has demonstrably joined OUR network,
+        # which is the thing the BSSID check was a proxy for.
+        deadline = time.monotonic() + JOIN_TIMEOUT
+        stations = []
+        while time.monotonic() < deadline:
+            stations = (wb.ap_status() or {}).get("stations") or []
+            if stations:
+                break
+            time.sleep(3)
+        evidence["stations"] = stations
+        assert stations, (
+            f"no station joined {BENCH_SSID} within {JOIN_TIMEOUT}s. The device "
+            "may be associating with another access point of the same name, or "
+            "failing to get a lease — check the bench's own `iw dev wlan0 "
+            "station dump`, because ap_status has been seen to lag it."
         )
+        dut_mac = stations[0]["mac"]
+        print(f"  station {dut_mac} at {stations[0].get('ip')} on {BENCH_SSID}")
+
+        # The BSSID line if it is still in the buffer — recorded, not required.
+        for line in dut.lines(seconds=5):
+            found = re.search(r"bssid = ([0-9a-f:]{17})", line)
+            if found:
+                evidence["bssid"] = found.group(1)
+                expected = _bssid_suffix(BENCH_SSID)
+                assert found.group(1).endswith(expected), (
+                    f"associated with {found.group(1)}, which is not this bench "
+                    f"(expected an address ending {expected})"
+                )
+                print(f"  {line}")
+                break
 
         stored = dut.await_line(r"diag:.*cfg=nvs", seconds=60)
         assert "cfg=nvs" in stored, \

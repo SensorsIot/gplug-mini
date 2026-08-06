@@ -93,6 +93,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "fast: completes in well under a minute")
     config.addinivalue_line("markers", "slow: needs a long observation window")
     config.addinivalue_line("markers", "disruptive: resets the board, injects a fault, or starts a download")
+    config.addinivalue_line("markers", "workflow: a continuous end-to-end journey, not an atomic contract")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -118,7 +119,15 @@ def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
     marks = {m.name for m in item.iter_markers()}
+    # A workflow never closes a gate. Its status is independent of its children
+    # by design: a failed journey with every atomic case passing is an
+    # integration defect, and suppressing those atomic cases would hide the very
+    # evidence that distinguishes the two. Run 4 lost eighteen tests this way —
+    # WF-001 failed on a log line it was too late to see, and the meter and
+    # broker suites never ran, on a device that was demonstrably operational.
     gate = next((m for m in GATES if m in marks), None)
+    if "workflow" in marks:
+        gate = None
     if report.when in ("setup", "call") and report.failed and gate:
         # Keep the earliest gate that broke: a later one failing is usually a
         # consequence, and naming the consequence sends the reader downstream of
