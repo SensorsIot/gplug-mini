@@ -15,8 +15,8 @@
 # BSSID it associated with.
 #
 # The broker is the workbench's own LAN address rather than its AP gateway
-# (192.168.27.1): the AP NATs out to the LAN, so one address serves both the
+# (192.168.168.1): the AP NATs out to the LAN, so one address serves both the
 # bench tests and the device.
-CONFIG_GPLUG_WIFI_SSID="wb-037e71"
+CONFIG_GPLUG_WIFI_SSID="wb-7cb1c2"
 CONFIG_GPLUG_WIFI_PASSWORD="benchtest123"
-CONFIG_GPLUG_MQTT_URI="mqtt://192.168.0.27:1883"
+CONFIG_GPLUG_MQTT_URI="mqtt://192.168.0.168:1883"

@@ -76,7 +76,7 @@ STATE_TIMEOUT = 90
 
 
 def _bssid_suffix(ssid):
-    """`wb-037e71` -> `03:7e:71`, the last three octets the SSID was built from.
+    """`wb-7cb1c2` -> `7c:b1:c2`, the last three octets the SSID was built from.
 
     The SSID carries the bench radio's own MAC precisely so this check needs no
     second source. Deriving it from a written-down address would reintroduce the

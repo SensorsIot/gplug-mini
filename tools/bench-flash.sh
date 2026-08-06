@@ -12,12 +12,12 @@
 # So every step below answers one question before the next is allowed to matter,
 # and refuses to flash into a state where the result could not be trusted.
 #
-# Needs: BENCH (default 192.168.0.27), ssh access as pi for the OpenOCD steps.
+# Needs: BENCH (default 192.168.0.168), ssh access as pi for the OpenOCD steps.
 set -euo pipefail
 
 DIR="${1:?usage: bench-flash.sh <dir-with-coldflash-binaries> [slot]}"
 SLOT="${2:-SLOT1}"
-BENCH="${BENCH:-192.168.0.27}"
+BENCH="${BENCH:-192.168.0.168}"
 URL="http://${BENCH}:8080"
 CHIP="${CHIP:-esp32c3}"
 OOCD_SCRIPTS=/usr/local/share/openocd-esp32/scripts
@@ -74,7 +74,7 @@ http=$(curl -s -m 400 -X POST "$URL/api/flash" \
   -F "slot=$SLOT" -F "chip=$CHIP" -F baud=460800 \
   -F "bin@0x0000=@$DIR/bootloader.bin" \
   -F "bin@0x8000=@$DIR/partition-table.bin" \
-  -F "bin@0xd000=@$DIR/ota_data_initial.bin" \
+  -F "bin@0xf000=@$DIR/ota_data_initial.bin" \
   -F "bin@0x20000=@$DIR/gplug-mini.bin" \
   -o /tmp/bench-flash.json -w '%{http_code}')
 
@@ -94,7 +94,7 @@ else
       -c 'init' -c 'halt' \
       -c 'program_esp /tmp/gplug-fw/bootloader.bin       0x0     verify' \
       -c 'program_esp /tmp/gplug-fw/partition-table.bin  0x8000  verify' \
-      -c 'program_esp /tmp/gplug-fw/ota_data_initial.bin 0xd000  verify' \
+      -c 'program_esp /tmp/gplug-fw/ota_data_initial.bin 0xf000  verify' \
       -c 'program_esp /tmp/gplug-fw/gplug-mini.bin       0x20000 verify' \
       -c 'reset run' -c 'exit' 2>&1 | grep -E 'Programming Finished|Verify OK|matches|Error' || true
     sudo systemctl start rfc2217-portal.service"

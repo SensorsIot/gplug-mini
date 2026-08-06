@@ -116,31 +116,33 @@ capabilities:
   mqtt-broker:
     what: mosquitto on Workbench2, reachable from the bench access point
     available: true
-    notes: mqtt://192.168.0.27:1883, anonymous - the same address the bench tests use
+    notes: mqtt://192.168.0.168:1883, anonymous - the same address the bench tests use
     limitation: |
       An earlier note here said to start a broker on BOTH benches because "the board joins whichever radio is stronger and cannot say which". That advice was wrong and it cost a day on 2026-08-05. The board CAN say which - it logs the BSSID it associated with - and the real problem was that both benches answered to the SSID `gplug-bench`, so the DUT joined the other one (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all. Three correct broker addresses were each blamed in turn.
       The fix is one bench with a unique SSID, not two brokers. Check `wifi:connected with <ssid> ... bssid = <mac>` against the bench radio before ever suspecting an address.
       Mosquitto does NOT survive an rfc2217-portal restart - it stops silently and the address then refuses connections. POST /api/mqtt/start after any service restart.
     parameters:
       scheme: mqtt
-      host: 192.168.0.27
+      host: 192.168.0.168
       port: 1883
       anonymous: true
-      uri: mqtt://192.168.0.27:1883
+      uri: mqtt://192.168.0.168:1883
   wifi-ap:
     what: The bench access point the board joins, MAC-derived so it cannot be confused with another bench
     available: true
     notes: |
-      SSID `wb-037e71` (last 3 octets of the Workbench2 wlan0 MAC dc:a6:32:03:7e:71), WPA2 `benchtest123`, channel 6, subnet 192.168.27.1/24 with DHCP .2-.20 - the third octet is the bench's own LAN host number, so two benches can collide on neither SSID nor subnet.
+      SSID `wb-7cb1c2` (last 3 octets of the bench wlan0 MAC d8:3a:dd:7c:b1:c2), WPA2 `benchtest123`, channel 6, subnet 192.168.168.1/24 with DHCP .2-.20 - the third octet is the bench's own LAN host number, so two benches can collide on neither SSID nor subnet.
+      Both values are DERIVED and move with the bench. On 2026-08-06 the DUT moved from Workbench2 (192.168.0.27, SSID wb-037e71, subnet 192.168.27.x) to this one, and copying the old constants across would have recreated exactly the collision they exist to prevent - this radio, d8:3a:dd:7c:b1:c2, is the one that silently stole the DUT on 2026-08-05.
+      The bench's own wifi_controller.py hardcoded AP_IP = 192.168.4.1, the ESP32 SoftAP address; patched 2026-08-06 to derive the third octet from the bench's LAN address (backup: wifi_controller.py.bak-preflight, override: WIFI_AP_IP).
       192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP default and belongs to a DUT running its own captive portal.
       POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is ignored and the AP comes up OPEN while still answering ok:true - the DUT then refuses it under its authmode threshold.
     parameters:
-      ssid: wb-037e71
-      bssid: dc:a6:32:03:7e:71
+      ssid: wb-7cb1c2
+      bssid: d8:3a:dd:7c:b1:c2
       passphrase: benchtest123
       channel: 6
-      subnet: 192.168.27.0/24
-      gateway: 192.168.27.1
+      subnet: 192.168.168.0/24
+      gateway: 192.168.168.1
   wifi-ap-outage:
     what: Stopping and restarting that access point on demand, to test recovery
     available: true
@@ -161,13 +163,13 @@ capabilities:
     what: An update source the board can be pointed at from the bench
     available: true
     notes: |
-      The workbench firmware store, found 2026-08-05 and needing nothing built. POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file> serves it as application/octet-stream, which is the URL the board downloads from - reachable as http://192.168.27.1:8080/... from the bench network.
+      The workbench firmware store, found 2026-08-05 and needing nothing built. POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file> serves it as application/octet-stream, which is the URL the board downloads from - reachable as http://192.168.168.1:8080/... from the bench network.
       POST /api/ota is NOT this. It runs espota.py against a board speaking ArduinoOTA, which is not the mechanism FR-OTA specifies.
     parameters:
       scheme: http
-      host: 192.168.27.1
+      host: 192.168.168.1
       port: 8080
-      base_url: http://192.168.27.1:8080/firmware/
+      base_url: http://192.168.168.1:8080/firmware/
       upload_endpoint: POST /api/firmware/upload
     fixtures:
       valid_image_url: null

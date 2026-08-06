@@ -57,7 +57,7 @@ else
   # binary rather than trusting the Kconfig default it was built from.
   # Both the current bench SSID and the retired one: an image built from an old
   # checkout leaks credentials just as effectively as one built from today's.
-  case "$(strings "$BIN" | grep -cE '^(wb-037e71|gplug-bench|benchtest123)$')" in
+  case "$(strings "$BIN" | grep -cE '^(wb-7cb1c2|wb-037e71|gplug-bench|benchtest123)$')" in
     0) check TS-112 "no bench credentials in the image" 0 ;;
     *) check TS-112 "no bench credentials in the image" 1 ;;
   esac

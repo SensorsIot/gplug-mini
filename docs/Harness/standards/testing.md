@@ -416,12 +416,12 @@ capabilities:
     what: Workbench access point
     available: true
     parameters:
-      ssid: wb-037e71
-      bssid: dc:a6:32:03:7e:71
+      ssid: wb-7cb1c2
+      bssid: d8:3a:dd:7c:b1:c2
       passphrase: benchtest123
       channel: 6
-      subnet: 192.168.27.0/24
-      gateway: 192.168.27.1
+      subnet: 192.168.168.0/24
+      gateway: 192.168.168.1
     notes: ...
     limitation: ...
 
@@ -430,10 +430,10 @@ capabilities:
     available: true
     parameters:
       scheme: mqtt
-      host: 192.168.0.27
+      host: 192.168.0.168
       port: 1883
       anonymous: true
-      uri: mqtt://192.168.0.27:1883
+      uri: mqtt://192.168.0.168:1883
 ```
 
 Rules:
@@ -1091,10 +1091,10 @@ specific FSD requirement makes it a test case.
 
 | Thing | Value | Why |
 |---|---|---|
-| AP SSID | `wb-037e71` | last 3 octets of the bench radio's MAC — no two benches collide |
+| AP SSID | `wb-7cb1c2` | last 3 octets of the bench radio's MAC — no two benches collide |
 | AP passphrase | `benchtest123` | WPA2 |
-| AP subnet | `192.168.27.1/24`, DHCP `.2–.20` | third octet is the bench's own LAN host number |
-| Broker | `mqtt://192.168.0.27:1883` | the bench's LAN address; the AP NATs out to it, so one address serves bench tests and device alike |
+| AP subnet | `192.168.168.1/24`, DHCP `.2–.20` | third octet is the bench's own LAN host number |
+| Broker | `mqtt://192.168.0.168:1883` | the bench's LAN address; the AP NATs out to it, so one address serves bench tests and device alike |
 | **Never the bench's** | `192.168.4.0/24` | `192.168.4.1` is the ESP32 SoftAP default and belongs to a DUT running its portal |
 
 Two traps, both of which answer `ok: true` while doing the wrong thing:
@@ -1111,11 +1111,11 @@ identically from the device side, and the device is far slower to interrogate:
 
 ```bash
 ssh pi@<bench> '
-  ip -4 -br addr show wlan0                                 # expect 192.168.27.1/24
+  ip -4 -br addr show wlan0                                 # expect 192.168.168.1/24
   sudo grep -E "^ssid|^wpa" /tmp/wifi-tester/hostapd.conf   # expect wpa=2 + passphrase
   ip link show wlan0 | grep ether                           # note the BSSID
-  timeout 8 mosquitto_sub -h 192.168.0.27 -t bench/selftest -C 1 &
-  sleep 2; mosquitto_pub -h 192.168.0.27 -t bench/selftest -m bench-ok; wait'
+  timeout 8 mosquitto_sub -h 192.168.0.168 -t bench/selftest -C 1 &
+  sleep 2; mosquitto_pub -h 192.168.0.168 -t bench/selftest -m bench-ok; wait'
 ```
 
 It must print `bench-ok`. Nothing learned from the board counts until it does.

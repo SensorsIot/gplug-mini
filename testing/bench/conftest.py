@@ -5,10 +5,11 @@ Pi: every operation has an endpoint, and reaching for SSH means the API is
 missing a capability that should be added there
 (docs/Harness/standards/testing.md).
 
-    pytest testing/bench --wt-url http://192.168.0.27:8080
+    pytest testing/bench --wt-url http://192.168.0.168:8080
 
-The bench address is not written down anywhere in the repository. gPlug-mini
-uses Workbench2; discover it and confirm with GET /api/info before a session.
+The constants below are DERIVED from whichever bench is in use — the SSID from
+its radio's MAC, the AP subnet from its own LAN host number — so moving benches
+means re-deriving them, never copying them. Confirm with GET /api/info first.
 """
 
 import os
@@ -37,7 +38,7 @@ POLL_SECONDS = 3
 def pytest_addoption(parser):
     parser.addoption(
         "--wt-url",
-        default=os.environ.get("WORKBENCH_URL", "http://192.168.0.27:8080"),
+        default=os.environ.get("WORKBENCH_URL", "http://192.168.0.168:8080"),
         help="Workbench portal URL",
     )
 
@@ -387,11 +388,11 @@ def dut_mac(dut):
 # fix for the failure of 2026-08-05: two benches both answered to `gplug-bench`,
 # the board joined the other one, and three correct broker addresses were each
 # blamed in turn before anyone read the BSSID in the board's own log.
-BENCH_SSID = "wb-037e71"           # last 3 octets of Workbench2 wlan0 dc:a6:32:03:7e:71
+BENCH_SSID = "wb-7cb1c2"           # last 3 octets of the bench wlan0 d8:3a:dd:7c:b1:c2
 BENCH_PASS = "benchtest123"
-BENCH_HOST = "192.168.0.27"        # the bench on the LAN; NAT makes it reachable from the AP
+BENCH_HOST = "192.168.0.168"       # the bench on the LAN; NAT makes it reachable from the AP
 BROKER_URI = f"mqtt://{BENCH_HOST}:1883"
-BENCH_AP_GATEWAY = "192.168.27.1"  # the bench as an AP; 192.168.4.1 belongs to the DUT's portal
+BENCH_AP_GATEWAY = "192.168.168.1" # the bench as an AP; 192.168.4.1 belongs to the DUT's portal
 
 
 @pytest.fixture
