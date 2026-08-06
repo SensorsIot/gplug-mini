@@ -94,6 +94,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: needs a long observation window")
     config.addinivalue_line("markers", "disruptive: resets the board, injects a fault, or starts a download")
     config.addinivalue_line("markers", "workflow: a continuous end-to-end journey, not an atomic contract")
+    config.addinivalue_line("markers", "manual: needs an operator at the bench — prompts via /api/human-interaction")
 
 
 def pytest_collection_modifyitems(config, items):
