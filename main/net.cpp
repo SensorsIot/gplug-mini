@@ -145,6 +145,27 @@ void wifi_start_and_wait(const Config& conf) {
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
   ESP_ERROR_CHECK(esp_wifi_start());
 
+  // No modem sleep. ESP-IDF defaults a station to WIFI_PS_MIN_MODEM, which
+  // sleeps the radio between beacons — and an access point that does not see a
+  // sleeping station answer will disassociate it for inactivity.
+  //
+  // Measured 2026-08-06 on two different benches with two different radios:
+  //
+  //   hostapd: STA ... associated
+  //   hostapd: STA ... disassociated        four seconds later, repeatedly
+  //   device:  disconnected, reason 4 (association expired), then 201
+  //
+  // No brownout and no reset in any of it — five minutes of uptime while the
+  // link came and went, so this was never the supply. It is intermittent
+  // because it depends on beacon timing, which is why the device sometimes held
+  // a lease for minutes and sometimes could not stay up for four seconds.
+  //
+  // There is nothing to trade away here: FR-MTR has the device powered from the
+  // meter's own 5 V rail, it is never on a battery, and it must publish within
+  // 2 s of a cycle boundary (NFR-HA-01). Sleeping between beacons buys power
+  // this product does not need and costs the connection it exists to keep.
+  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
   uint8_t mac[6] = {};
   ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
   std::snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
