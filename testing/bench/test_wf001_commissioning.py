@@ -146,10 +146,7 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # Before the device is even configured, so the deferral assertion later
         # is about ordering rather than about what the rig happened to be doing.
         step("arrange", "simulator on identity none, retained discovery cleared")
-        sim.command("identity none")
-        state = sim.status()
-        assert state.get("identity") == "none", \
-            f"simulator would not drop its identity: {state}"
+        sim.set_verified("identity", "none")
 
         stale = [m[1] for m in watch.messages if m[1].startswith("homeassistant/")]
         watch.clear_retained(stale)
@@ -275,8 +272,7 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # ── 7. give it an identity; discovery must follow ───────────────────
         wb.test_step("TS-109", "meter identity", "restore identity, expect discovery")
         step("restore the meter identity")
-        sim.command("identity ldn")
-        assert sim.status().get("identity") != "none", "the simulator kept its identity off"
+        sim.set_verified("identity", "ldn")
 
         mark = watch.mark()
         deadline = time.monotonic() + DISCOVERY_TIMEOUT

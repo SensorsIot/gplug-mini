@@ -206,26 +206,31 @@ def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     downstream can tell it is wrong. So the check is that the corrupted cycle
     publishes nothing, not merely that the device survives.
     """
+    before = int(sim.status().get("emissions", 0))
     sim.command("fault fcs 2")
     dut.drain()
     lines = dut.lines(seconds=30)
-    cycles = [l for l in lines if "cycle:" in l]
-    published = [l for l in lines if "published" in l and "state" in l]
-    print(f"\n  {len(cycles)} cycle(s), {len(published)} publish(es)")
+    after = int(sim.status().get("emissions", 0))
 
-    # The directive corrupts ONE telegram and then clears itself, so the good
-    # cycles either side of it publish exactly as they should. Asserting that
-    # nothing at all was published across the window therefore fails on correct
-    # behaviour — which is what it did on 2026-08-06, reporting two legitimate
-    # publishes as a corrupted frame reaching the broker. What the requirement
-    # actually forbids is values coming OUT of the corrupted cycle, so the
-    # oracle is that at least one cycle in the window produced no publication.
-    assert cycles, "no cycle at all in 30 s — the meter link is silent"
-    assert len(published) < len(cycles), (
-        f"every one of {len(cycles)} cycles published, so the corrupted frame "
-        "produced values too. A decoder that emits from a bad-checksum frame "
-        "makes a message that parses and graphs, and nothing downstream can "
-        "tell it is wrong."
+    emitted = after - before
+    published = [l for l in lines if "published" in l and "state" in l]
+    cycles = [l for l in lines if "cycle:" in l]
+    print(f"\n  {emitted} telegram(s) emitted, {len(cycles)} cycle(s) assembled, "
+          f"{len(published)} publish(es)")
+
+    # The oracle is the SIMULATOR's emission count, not the device's cycle count.
+    # A corrupted telegram is discarded early enough that the device never logs a
+    # cycle for it at all, so counting cycles compares two numbers that both drop
+    # and proves nothing — measured 2026-08-06: 3 cycles, 3 publishes, and the
+    # corrupted burst simply missing from both. Emissions are what the rig knows
+    # it sent, so publishes < emissions is the claim that the bad frame produced
+    # no values.
+    assert emitted > 0, "the simulator emitted nothing in 30 s — a rig fault"
+    assert len(published) < emitted, (
+        f"all {emitted} emitted telegrams produced a publication, so the frame "
+        "with the bad checksum produced values too. A decoder that emits from a "
+        "corrupted frame makes a message that parses and graphs, and nothing "
+        "downstream can tell it is wrong."
     )
 
 
@@ -244,14 +249,35 @@ def test_ts042_ts044_quiet_and_noisy_lines(dut, sim, directive, expect):
     noise is abnormal and must be distinguishable from a decode failure, because
     the two want completely different fixes.
     """
+    before = int(sim.status().get("emissions", 0))
     sim.command(directive)
     dut.drain()
     lines = dut.lines(seconds=40)
+    emitted = int(sim.status().get("emissions", 0)) - before
 
     published = [line for line in lines if "published" in line and "state" in line]
-    assert not published, f"{directive!r} produced a published measurement: {published}"
 
-    if directive.startswith("fault noise"):
-        distinct = [line for line in lines if "nothing decoded" in line or "flags" in line]
-        assert distinct, "noise was not reported as anything — it must not look like silence"
-        print(f"\n  noise reported on {len(distinct)} line(s)")
+    if directive.startswith("silence"):
+        # Silence stops emission outright, so nothing may be published at all.
+        assert not published, (
+            f"{directive!r} produced a published measurement with no meter "
+            f"sending anything: {published}"
+        )
+        print(f"\n  {emitted} emission(s) during silence, {len(published)} publish(es)")
+        return
+
+    # `fault noise` corrupts ONE telegram and then clears itself, so the good
+    # telegrams either side publish exactly as they should. Requiring silence
+    # across the whole window fails on correct behaviour — measured 2026-08-06,
+    # three legitimate publications reported as noise reaching the broker. What
+    # the requirement asks is that the noisy one yields nothing and is CALLED
+    # something, distinct from a quiet line.
+    assert emitted > 0, "the simulator emitted nothing — a rig fault"
+    assert len(published) < emitted, (
+        f"all {emitted} emitted telegrams published, so the noisy one produced "
+        "values too"
+    )
+    distinct = [line for line in lines if "nothing decoded" in line or "flags" in line]
+    assert distinct, "noise was not reported as anything — it must not look like silence"
+    print(f"\n  {emitted} emission(s), {len(published)} publish(es), "
+          f"noise reported on {len(distinct)} line(s)")

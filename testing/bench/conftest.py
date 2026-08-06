@@ -416,6 +416,27 @@ class Sim:
         "serial": "serial 8",
     }
 
+    def set_verified(self, field, value, attempts=4):
+        """Set one field and prove it took, because a bare command can vanish.
+
+        The console interleaves the simulator's own emit log with command
+        replies and a directive can be swallowed in that traffic. `known_state`
+        already retries for the fields it owns; anything a test changes on its
+        own needs the same treatment. WF-001 set `identity ldn` with one
+        unverified call, it was lost, the device never decoded a meter serial,
+        and the workflow failed reporting that discovery was never published —
+        which was true, and entirely the rig's doing.
+        """
+        for _ in range(attempts):
+            self.command(f"{field} {value}")
+            time.sleep(1)
+            if str(self.status().get(field, "")).startswith(str(value)):
+                return True
+        pytest.fail(
+            f"the simulator would not accept `{field} {value}` after {attempts} "
+            f"attempts — a rig fault, so nothing read from the board means anything"
+        )
+
     def known_state(self, attempts=4):
         """Drive the simulator to a known state, verifying each field.
 
@@ -496,20 +517,43 @@ def broker_host(request):
 
 
 @pytest.fixture
-def dut_mac(dut):
-    """The MAC the device publishes under, read from its own log.
+def dut_mac(dut, broker):
+    """The MAC the device publishes under, read from the broker's own topics.
 
-    Not derived from anything: the topic tree is keyed on the station MAC, and a
-    test that computed it a second way would agree with itself and disagree with
-    the device.
+    Not from the device's log. The topic name appears there once, early, in a
+    line that is gone by the time most tests look — three update tests errored
+    in setup on 2026-08-06 with "the device never named its own topic", on a
+    board that was connected and publishing. And not computed here either: a
+    harness that derives the topic a second way agrees with itself and disagrees
+    with the device.
+
+    The broker is the right source. The device's own retained status topic names
+    it, which is both authoritative and durable.
     """
-    for line in dut.lines(seconds=25):
-        m = re.search(r"gplug/([0-9a-f:]{17})/", line)
-        if m:
-            return m.group(1)
+    import paho.mqtt.client as mqtt
+
+    seen = []
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.on_message = lambda _c, _u, m: seen.append(m.topic)
+    client.connect(BENCH_HOST, 1883, 60)
+    client.subscribe("gplug/+/status", qos=0)
+    client.subscribe("gplug/+/state", qos=0)
+    client.loop_start()
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and not seen:
+            time.sleep(2)
+    finally:
+        client.loop_stop()
+        client.disconnect()
+
+    for topic in seen:
+        parts = topic.split("/")
+        if len(parts) > 1 and len(parts[1]) == 17:
+            return parts[1]
     pytest.fail(
-        "the device never named its own topic in 25 s — it is not connected to "
-        "the broker, so nothing published to it would arrive"
+        "no gplug/<mac>/ topic reached the broker in 60 s — the device is not "
+        "publishing, so nothing addressed to it would arrive either"
     )
 
 
