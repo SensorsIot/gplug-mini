@@ -97,14 +97,37 @@ def test_ts056_the_button_does_not_strap_the_board_into_download_mode(dut, wb):
              "lead, wait 3 s, plug it back in, keep holding 3 s more, then "
              "release. Click Done when released.")
 
-    # Re-enumeration after a physical replug takes longer than a JTAG reset.
-    time.sleep(15)
-    line = dut.await_line(r"gPlug-mini|diag:|boot:", seconds=90)
-    print(f"\n  {line}")
-    assert "boot:0x1" not in line, (
-        "the board came up in SPI download boot, so a user holding the button "
-        "during a power cut is left with a device that never runs its firmware "
-        "and answers nothing"
+    # Proven off the console, because the console cannot prove it. After a
+    # physical replug the CDC re-enumerates and stays silent for long stretches —
+    # measured 2026-08-06, 90 s of nothing from a board that had booted fine —
+    # so "no banner" is not evidence of a failure to boot.
+    #
+    # A board in SPI download boot runs NO firmware: it cannot join a network and
+    # cannot publish. So a station on this AP, or a message on the broker, is
+    # positive proof that the ROM chose normal boot with the button held.
+    time.sleep(20)
+    watch = MqttWatch(BENCH_HOST, [STATUS])
+    try:
+        deadline = time.monotonic() + 150
+        booted = None
+        while time.monotonic() < deadline:
+            if watch.messages:
+                booted = f"published {watch.messages[-1][1]}"
+                break
+            if (wb.ap_status() or {}).get("stations"):
+                booted = f"joined as {(wb.ap_status() or {})['stations'][0]['mac']}"
+                break
+            time.sleep(5)
+    finally:
+        watch.close()
+
+    print(f"\n  {booted or 'no sign of the firmware running'}")
+    assert booted, (
+        "the board neither joined the network nor published anything in 150 s "
+        "after the button was held through a power cycle. That is what SPI "
+        "download boot looks like from outside: no firmware runs, so a user who "
+        "holds the button while power returns is left with a device that answers "
+        "nothing and looks dead."
     )
 
 

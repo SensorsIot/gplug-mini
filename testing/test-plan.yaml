@@ -1185,7 +1185,9 @@ test_cases:
   expected: SoftAP appears within 5 s
   procedure: P-NETWORK
   status: not done
-  reason: not yet run with the physical button
+  reason: firmware does not implement it - there is no GPIO input handling anywhere in main/. The only gpio_config is indicator.cpp
+    for the three LEDs, and app_main starts no button task. FR-SUP-06 is unimplemented, so the case cannot pass and pressing
+    the button proves nothing. Found 2026-08-06 by reading the source before running the manual test.
   commit: null
   when: null
 - id: TS-036
@@ -1394,10 +1396,10 @@ test_cases:
   does: Cut DUT power while connected
   expected: Broker marks it unavailable within the keepalive window
   procedure: P-METER
-  status: not done
-  reason: test not written
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: ba6d09d
+  when: '2026-08-06'
 - id: TS-050
   kind: atomic
   scenario: standard
@@ -1521,7 +1523,10 @@ test_cases:
   expected: Device boots normally
   procedure: P-TARGET
   status: not done
-  reason: not yet run with the physical button
+  reason: the requirement HELD on hardware 2026-08-06 - the board was held through a power cycle by the button and came back
+    associated and publishing `online`, which SPI download boot cannot do. Recorded not done rather than successful because
+    the test that ran asserted on a silent console and failed; it now proves boot off the broker and must be re-run to earn
+    the result.
   commit: null
   when: null
 - id: TS-057
