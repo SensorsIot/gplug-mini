@@ -438,6 +438,62 @@ def unprovisioned(wb, dut):
     # provisioning phase ends by configuring it for everything downstream.
 
 
+class MqttWatch:
+    """A subscription held open across steps, with arrival times kept.
+
+    Workflows need to say *when* a message arrived relative to a stimulus, which
+    a subscribe-collect-disconnect helper cannot: by the time it returns, the
+    ordering it was supposed to establish is gone. So this stays open for the
+    length of the journey and every message is stamped as it lands.
+
+    `retain` is recorded per message because a retained copy and a live publish
+    are indistinguishable once the flag is discarded — and reading the first for
+    the second is the standard way to conclude a dead device is healthy.
+    """
+
+    def __init__(self, host, topics, port=1883):
+        import paho.mqtt.client as mqtt
+
+        self.messages = []          # (monotonic, topic, payload, retain)
+        self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self._client.on_message = self._on_message
+        self._client.connect(host, port, 60)
+        for t in topics:
+            self._client.subscribe(t, qos=0)
+        self._client.loop_start()
+
+    def _on_message(self, _client, _userdata, msg):
+        self.messages.append((
+            time.monotonic(), msg.topic,
+            msg.payload.decode("utf-8", "replace"), bool(msg.retain),
+        ))
+
+    def since(self, mark, topic_prefix=""):
+        return [m for m in self.messages
+                if m[0] > mark and m[1].startswith(topic_prefix)]
+
+    def clear_retained(self, topics):
+        """Publish an empty retained payload, which deletes a retained message.
+
+        Needed before asserting that something *appears*: a config left on the
+        broker by an earlier run satisfies the assertion without the device
+        having done anything at all.
+        """
+        for t in topics:
+            self._client.publish(t, payload=None, qos=1, retain=True)
+        time.sleep(2)
+
+    def mark(self):
+        return time.monotonic()
+
+    def close(self):
+        try:
+            self._client.loop_stop()
+            self._client.disconnect()
+        except Exception:
+            pass
+
+
 def decoded_values(line):
     """The object count from a `cycle:` log line, or None."""
     m = re.search(r"cycle: \d+ bytes, (\d+) objects", line)

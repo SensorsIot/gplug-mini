@@ -2456,8 +2456,10 @@ test_cases:
   - a discovery configuration exists for an entity absent from the cycle
   - a state_topic is published that nothing publishes to
   status: not done
-  reason: unblocked 2026-08-06 - every capability it needs is available and the whole journey was driven by hand
-    on 2026-08-05; the workflow is not implemented as an executable test yet
+  reason: written 2026-08-06 as testing/bench/test_wf001_commissioning.py, not yet run against hardware. Writing
+    it found two things no atomic case covers - the discovery payloads carry no device.sw_version (NFR-OTA-01,
+    a Must), and nothing had ever compared the state_topic the configs declare against the topic the device
+    publishes to
   commit: null
   when: null
   evidence_required:
