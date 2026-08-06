@@ -1,27 +1,3 @@
-# gPlug-mini — the single source of truth for testing
-#
-# What must be proved lives in the FSD; this file says how it will be proved,
-# with what equipment, and what happened last time. Requirements are referenced
-# by ID and never restated.
-#
-# It defines test DESIGN. A definition here is not a claim that the test is
-# written, let alone that it ran: `status`, `reason`, `commit` and `when` are
-# written by the runner and by nothing else.
-#
-# Two independent classifications, and conflating them is the mistake this
-# schema exists to prevent:
-#
-#   kind      atomic | workflow            structural level
-#   scenario  standard | deviation | negative | security    what is exercised
-#
-# An atomic case answers "which specified behaviour failed?". A workflow answers
-# "does the product do its job?". Workflow status is NOT derived from its
-# children - all children green with the workflow red is an integration defect,
-# and that is a result worth being able to express.
-#
-# How to derive, write, validate and run all of this is
-# docs/Harness/standards/testing.md.
-#
 metadata:
   project: gPlug-mini
   document: Hierarchical test plan
@@ -43,10 +19,10 @@ metadata:
     - failed
     - blocked
     - retired
-    hierarchy: A workflow lists atomic test cases in children. A child may support more than one workflow. children
-      express traceability and test design; the workflow executes its own continuous steps using actions.
-    result_rule: Workflow status is independent of child status. All children can pass while the workflow fails
-      at an integration handoff, and a workflow can pass while some atomic boundary or diagnostic tests remain incomplete.
+    hierarchy: A workflow lists atomic test cases in children. A child may support more than one workflow. children express
+      traceability and test design; the workflow executes its own continuous steps using actions.
+    result_rule: Workflow status is independent of child status. All children can pass while the workflow fails at an integration
+      handoff, and a workflow can pass while some atomic boundary or diagnostic tests remain incomplete.
     workflow_required_fields:
     - id
     - kind
@@ -72,10 +48,9 @@ metadata:
       requirements: Every Must and Should requirement has at least one atomic test.
       acceptance: Every FSD acceptance scenario has a primary workflow.
       goals: Every product goal is covered by at least one release-gate workflow.
-      state_machine: Every normative supervisor transition has atomic coverage; useful multi-transition paths have
-        workflow coverage.
-      risks: Network, broker, meter, watchdog, update and persistence recovery are represented by workflows or atomic
-        tests.
+      state_machine: Every normative supervisor transition has atomic coverage; useful multi-transition paths have workflow
+        coverage.
+      risks: Network, broker, meter, watchdog, update and persistence recovery are represented by workflows or atomic tests.
   migration:
     existing_atomic_tests: 109
     added_workflows: 13
@@ -84,9 +59,9 @@ metadata:
     - atomic
     - workflow
     existing_results: carried forward unchanged except TS-025 status normalized to retired
-    enhancement: Added broker-outage, meter-silence, production-image, reconfiguration and watchdog-recovery workflows;
-      structured capability parameters; explicit unresolved test-design decisions; workflow evidence contracts;
-      and proposed release gates.
+    enhancement: Added broker-outage, meter-silence, production-image, reconfiguration and watchdog-recovery workflows; structured
+      capability parameters; explicit unresolved test-design decisions; workflow evidence contracts; and proposed release
+      gates.
     final_design_changes:
     - Corrected all structured capability and fixture references.
     - Added WF-013 for normal unattended startup after power restoration.
@@ -100,27 +75,66 @@ capabilities:
     what: MBUS-Simulator in workbench slot 3, driven over its console
     available: true
     notes: modes 1-4, plus fault / gap / silence / serial / identity / energy / scaler
-    notes2: |
-      The console is driven over the RFC2217 proxy on port 4003 at 115200, not through the workbench HTTP API, which can read serial but not write it. The proxy takes ONE client, so a per-test connection races its own teardown - testing/bench/conftest.py holds one for the session.
-      Its `status` line reports the state it is actually in. Check it rather than assuming: it has been found on `identity none`, which makes every discovery test fail for a reason that has nothing to do with the device.
-    limitation: |
-      Mode 2 is the signal to test through, and it is solid. Measured 2026-08-05 over ten minutes: 74 cycles, every one 144 bytes, every one decoding all four objects - power, energy and the meter identity. The values match what the simulator reports sending (777 W, 12345 Wh, serial 44337811), which is a stronger claim than "something decoded" and the one worth making.
-      It also carries the same energy register twice per cycle with different scalers, so it exercises FR-AGG-04 on hardware for free - the first occurrence is kept and the later one discarded, which until now was only tested at host tier against a fixture.
+    notes2: 'The console is driven over the RFC2217 proxy on port 4003 at 115200, not through the workbench HTTP API, which
+      can read serial but not write it. The proxy takes ONE client, so a per-test connection races its own teardown - testing/bench/conftest.py
+      holds one for the session.
+
+      Its `status` line reports the state it is actually in. Check it rather than assuming: it has been found on `identity
+      none`, which makes every discovery test fail for a reason that has nothing to do with the device.
+
+      '
+    limitation: 'Mode 2 is the signal to test through, and it is solid. Measured 2026-08-05 over ten minutes: 74 cycles, every
+      one 144 bytes, every one decoding all four objects - power, energy and the meter identity. The values match what the
+      simulator reports sending (777 W, 12345 Wh, serial 44337811), which is a stronger claim than "something decoded" and
+      the one worth making.
+
+      It also carries the same energy register twice per cycle with different scalers, so it exercises FR-AGG-04 on hardware
+      for free - the first occurrence is kept and the later one discarded, which until now was only tested at host tier against
+      a fixture.
+
       Mode 3 is a different story and the rest of this note is about it.
+
       The signal is not fully stable and this is accepted, not a defect to chase.
-      Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives either 409 byte-perfect from 0x00, or exactly 360 that are garbage from the first byte - bimodal, four of nine clean. A burst lands whole or garbles; it does not lose a prefix, and a garbled one also loses ~49 bytes.
-      Mode 1 cannot answer the polarity question, and an earlier note here saying it had is withdrawn. The simulator does emit 0x55 (its own emit line reports `pattern=0x55`, 218 bytes), but a pattern has no HDLC framing by construction, and the firmware rotates its UART line settings after two bursts with no framing. So the probe walks candidates during the test and the board reports whichever setting it happened to be on - 0x55, 0x00 and 0xD5 in one run. The measurement moves under the measurer.
-      What does stand: the mode 3 telegram arrives with valid DLMS structure - a readable date-time and OBIS codes in the first 32 bytes - so the line settings are right for that mode and the truncation is not a polarity error. TS-022 needs the probe pinned before it can mean anything.
-      Mode 3 behaves differently and worse: across 12 cycles the sizes were 317-389 of 409 and never once whole. So the e450 telegram has never been delivered complete, and a `0 objects` result from a truncated burst is correct behaviour rather than a decode defect. TS-020 asserts this and currently fails - read it before reading any other meter result.
-      So a bench assertion on decoded output must span several cycles and require one good one, never assert on a single cycle. A single-cycle test here is flaky by construction, and will be blamed on the firmware.
+
+      Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives either 409 byte-perfect from 0x00, or exactly
+      360 that are garbage from the first byte - bimodal, four of nine clean. A burst lands whole or garbles; it does not
+      lose a prefix, and a garbled one also loses ~49 bytes.
+
+      Mode 1 cannot answer the polarity question, and an earlier note here saying it had is withdrawn. The simulator does
+      emit 0x55 (its own emit line reports `pattern=0x55`, 218 bytes), but a pattern has no HDLC framing by construction,
+      and the firmware rotates its UART line settings after two bursts with no framing. So the probe walks candidates during
+      the test and the board reports whichever setting it happened to be on - 0x55, 0x00 and 0xD5 in one run. The measurement
+      moves under the measurer.
+
+      What does stand: the mode 3 telegram arrives with valid DLMS structure - a readable date-time and OBIS codes in the
+      first 32 bytes - so the line settings are right for that mode and the truncation is not a polarity error. TS-022 needs
+      the probe pinned before it can mean anything.
+
+      Mode 3 behaves differently and worse: across 12 cycles the sizes were 317-389 of 409 and never once whole. So the e450
+      telegram has never been delivered complete, and a `0 objects` result from a truncated burst is correct behaviour rather
+      than a decode defect. TS-020 asserts this and currently fails - read it before reading any other meter result.
+
+      So a bench assertion on decoded output must span several cycles and require one good one, never assert on a single cycle.
+      A single-cycle test here is flaky by construction, and will be blamed on the firmware.
+
+      '
   mqtt-broker:
     what: mosquitto on Workbench2, reachable from the bench access point
     available: true
     notes: mqtt://192.168.0.168:1883, anonymous - the same address the bench tests use
-    limitation: |
-      An earlier note here said to start a broker on BOTH benches because "the board joins whichever radio is stronger and cannot say which". That advice was wrong and it cost a day on 2026-08-05. The board CAN say which - it logs the BSSID it associated with - and the real problem was that both benches answered to the SSID `gplug-bench`, so the DUT joined the other one (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all. Three correct broker addresses were each blamed in turn.
-      The fix is one bench with a unique SSID, not two brokers. Check `wifi:connected with <ssid> ... bssid = <mac>` against the bench radio before ever suspecting an address.
-      Mosquitto does NOT survive an rfc2217-portal restart - it stops silently and the address then refuses connections. POST /api/mqtt/start after any service restart.
+    limitation: 'An earlier note here said to start a broker on BOTH benches because "the board joins whichever radio is stronger
+      and cannot say which". That advice was wrong and it cost a day on 2026-08-05. The board CAN say which - it logs the
+      BSSID it associated with - and the real problem was that both benches answered to the SSID `gplug-bench`, so the DUT
+      joined the other one (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all. Three correct broker addresses
+      were each blamed in turn.
+
+      The fix is one bench with a unique SSID, not two brokers. Check `wifi:connected with <ssid> ... bssid = <mac>` against
+      the bench radio before ever suspecting an address.
+
+      Mosquitto does NOT survive an rfc2217-portal restart - it stops silently and the address then refuses connections. POST
+      /api/mqtt/start after any service restart.
+
+      '
     parameters:
       scheme: mqtt
       host: 192.168.0.168
@@ -130,14 +144,32 @@ capabilities:
   wifi-ap:
     what: The bench access point the board joins, MAC-derived so it cannot be confused with another bench
     available: true
-    notes: |
-      SSID `wb-7cb1c2` (last 3 octets of the bench wlan0 MAC d8:3a:dd:7c:b1:c2), WPA2 `benchtest123`, channel 6, subnet 192.168.168.1/24 with DHCP .2-.20 - the third octet is the bench's own LAN host number, so two benches can collide on neither SSID nor subnet.
-      Both values are DERIVED and move with the bench. On 2026-08-06 the DUT moved from Workbench2 (192.168.0.27, SSID wb-037e71, subnet 192.168.27.x) to this one, and copying the old constants across would have recreated exactly the collision they exist to prevent - this radio, d8:3a:dd:7c:b1:c2, is the one that silently stole the DUT on 2026-08-05.
-      The bench's own wifi_controller.py hardcoded AP_IP = 192.168.4.1, the ESP32 SoftAP address; patched 2026-08-06 to derive the third octet from the bench's LAN address (backup: wifi_controller.py.bak-preflight, override: WIFI_AP_IP).
-      DHCP_RANGE_START/END were two further hardcoded 192.168.4.x constants and had to move with it. Left behind, the interface sat on 192.168.168.1/24 while dnsmasq offered 192.168.4.x, so a device associated, completed the handshake, asked for an address and got `no address range available for DHCP request via wlan0` until it gave up - reported by the device as `disconnected, reason 201` and indistinguishable from an AP it could not find. Both are now derived from AP_IP.
-      `ap_status` lagged the truth throughout: it reported `stations: []` while `iw dev wlan0 station dump` showed the device associated. Read the bench radio directly before believing an empty station list.
-      192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP default and belongs to a DUT running its own captive portal.
-      POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is ignored and the AP comes up OPEN while still answering ok:true - the DUT then refuses it under its authmode threshold.
+    notes: 'SSID `wb-7cb1c2` (last 3 octets of the bench wlan0 MAC d8:3a:dd:7c:b1:c2), WPA2 `benchtest123`, channel 6, subnet
+      192.168.168.1/24 with DHCP .2-.20 - the third octet is the bench''s own LAN host number, so two benches can collide
+      on neither SSID nor subnet.
+
+      Both values are DERIVED and move with the bench. On 2026-08-06 the DUT moved from Workbench2 (192.168.0.27, SSID wb-037e71,
+      subnet 192.168.27.x) to this one, and copying the old constants across would have recreated exactly the collision they
+      exist to prevent - this radio, d8:3a:dd:7c:b1:c2, is the one that silently stole the DUT on 2026-08-05.
+
+      The bench''s own wifi_controller.py hardcoded AP_IP = 192.168.4.1, the ESP32 SoftAP address; patched 2026-08-06 to derive
+      the third octet from the bench''s LAN address (backup: wifi_controller.py.bak-preflight, override: WIFI_AP_IP).
+
+      DHCP_RANGE_START/END were two further hardcoded 192.168.4.x constants and had to move with it. Left behind, the interface
+      sat on 192.168.168.1/24 while dnsmasq offered 192.168.4.x, so a device associated, completed the handshake, asked for
+      an address and got `no address range available for DHCP request via wlan0` until it gave up - reported by the device
+      as `disconnected, reason 201` and indistinguishable from an AP it could not find. Both are now derived from AP_IP.
+
+      `ap_status` lagged the truth throughout: it reported `stations: []` while `iw dev wlan0 station dump` showed the device
+      associated. Read the bench radio directly before believing an empty station list.
+
+      192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP default and belongs to a DUT running its own
+      captive portal.
+
+      POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is ignored and the AP comes up OPEN while still
+      answering ok:true - the DUT then refuses it under its authmode threshold.
+
+      '
     parameters:
       ssid: wb-7cb1c2
       bssid: d8:3a:dd:7c:b1:c2
@@ -149,24 +181,24 @@ capabilities:
     what: Stopping and restarting that access point on demand, to test recovery
     available: true
     notes: POST /api/wifi/ap_start | ap_stop, both confirmed working 2026-08-05
-    limitation: |
-      An earlier limitation here said gplug-bench was a NetworkManager connection that ap_stop could not touch, so an outage test would observe nothing and prove nothing. That no longer holds: the bench AP is hostapd started by the workbench itself, and ap_stop/ap_start were exercised repeatedly during provisioning on 2026-08-05.
+    limitation: 'An earlier limitation here said gplug-bench was a NetworkManager connection that ap_stop could not touch,
+      so an outage test would observe nothing and prove nothing. That no longer holds: the bench AP is hostapd started by
+      the workbench itself, and ap_stop/ap_start were exercised repeatedly during provisioning on 2026-08-05.
+
       These tests are therefore no longer blocked on equipment or on FR-PRV.
-  # home-assistant and ha-bridge were capabilities here until 2026-08-06 and are
-  # now deliberately absent. FSD 22.0 puts the verification boundary at the
-  # broker: everything the device does is a message, and every message can be
-  # read with a subscription. Testing through Home Assistant would prove the
-  # device, the MQTT integration and the recipe registry at once, so a failure
-  # could not be attributed - and because discovery is retained, every bench run
-  # would leave real devices in a live instance until someone cleared each config
-  # topic by hand. What that does not prove is recorded as an accepted risk in
-  # FSD 4.1, not hidden.
+
+      '
   ota-relay:
     what: An update source the board can be pointed at from the bench
     available: true
-    notes: |
-      The workbench firmware store, found 2026-08-05 and needing nothing built. POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file> serves it as application/octet-stream, which is the URL the board downloads from - reachable as http://192.168.168.1:8080/... from the bench network.
-      POST /api/ota is NOT this. It runs espota.py against a board speaking ArduinoOTA, which is not the mechanism FR-OTA specifies.
+    notes: 'The workbench firmware store, found 2026-08-05 and needing nothing built. POST /api/firmware/upload puts an image
+      on the Pi; GET /firmware/<project>/<file> serves it as application/octet-stream, which is the URL the board downloads
+      from - reachable as http://192.168.168.1:8080/... from the bench network.
+
+      POST /api/ota is NOT this. It runs espota.py against a board speaking ArduinoOTA, which is not the mechanism FR-OTA
+      specifies.
+
+      '
     parameters:
       scheme: http
       host: 192.168.168.1
@@ -187,15 +219,22 @@ capabilities:
       active_level: low
       runtime_hold_ms: 5000
       softap_timeout_s: 5
-    notes: The workbench cannot electrically drive this pin, but a person can operate the real button. This capability
-      proves the physical button path; the unavailable button-gpio capability remains documented for future automation.
+    notes: The workbench cannot electrically drive this pin, but a person can operate the real button. This capability proves
+      the physical button path; the unavailable button-gpio capability remains documented for future automation.
   button-gpio:
     what: Automated electrical actuation of the board's button pin from the workbench
     available: false
-    notes: |
-      Settled 2026-08-05 by hardware reset rather than by inference. Pin 18 held low across an EN pulse on pin 17 produced neither download mode nor a reset: uptime ran straight through 1982 ms to 20592 ms. The Pi header reaches this board at all - SLOT1 is a native USB JTAG device (303a:1001), so reset and flash go over USB and the GPIO pins drive nothing.
-      An earlier note recorded "pin 18 low, no reaction", which could not tell a dead wire from a firmware that has no button handler. Only a strapping-pin test can, because the ROM samples GPIO9 with no firmware involved.
-      So these tests need a firmware test seam - a console command standing in for the press - plus one physical press to prove the real pin path once.
+    notes: 'Settled 2026-08-05 by hardware reset rather than by inference. Pin 18 held low across an EN pulse on pin 17 produced
+      neither download mode nor a reset: uptime ran straight through 1982 ms to 20592 ms. The Pi header reaches this board
+      at all - SLOT1 is a native USB JTAG device (303a:1001), so reset and flash go over USB and the GPIO pins drive nothing.
+
+      An earlier note recorded "pin 18 low, no reaction", which could not tell a dead wire from a firmware that has no button
+      handler. Only a strapping-pin test can, because the ROM samples GPIO9 with no firmware involved.
+
+      So these tests need a firmware test seam - a console command standing in for the press - plus one physical press to
+      prove the real pin path once.
+
+      '
   power-cycle:
     what: One removal and restoration of the board's supply, operated by a person
     available: true
@@ -203,17 +242,34 @@ capabilities:
       method: manual
       prompt_endpoint: POST /api/human-interaction
       reconnect_wait_s: 20
-    notes: |
-      The same arrangement as physical-button: the workbench cannot switch this slot's supply, but a person can unplug and replug the USB lead, and /api/human-interaction blocks the test until they confirm. That covers every case needing ONE power loss - WF-013 above all, which is an ordinary startup journey rather than a fault injection.
-      On SLOT1 the supply and the console are the same lead, so a power cycle drops the serial connection. The test must wait for the device to re-enumerate and reattach before reading the boot banner; a monitor call issued too early returns nothing and reads as a board that never booted.
-      Split out from power-cycle-endurance on 2026-08-06. Before that, one capability covered both a single operator-driven cycle and 100 automated ones, so WF-013 was recorded blocked by hardware nobody needs for it.
+    notes: 'The same arrangement as physical-button: the workbench cannot switch this slot''s supply, but a person can unplug
+      and replug the USB lead, and /api/human-interaction blocks the test until they confirm. That covers every case needing
+      ONE power loss - WF-013 above all, which is an ordinary startup journey rather than a fault injection.
+
+      On SLOT1 the supply and the console are the same lead, so a power cycle drops the serial connection. The test must wait
+      for the device to re-enumerate and reattach before reading the boot banner; a monitor call issued too early returns
+      nothing and reads as a board that never booted.
+
+      Split out from power-cycle-endurance on 2026-08-06. Before that, one capability covered both a single operator-driven
+      cycle and 100 automated ones, so WF-013 was recorded blocked by hardware nobody needs for it.
+
+      '
   power-cycle-endurance:
     what: Automated switched supply, for repeated unclean power loss under program control
     available: false
-    notes: |
-      Found missing 2026-08-05 while writing TS-079, which asks for 100 cycles. Nobody operates a lead a hundred times, so the manual power-cycle capability cannot stand in - and neither can a reset: FR-NVS-03 is about a write interrupted with the supply going away, and a JTAG or software reset leaves the flash controller to finish. Substituting either would make the test pass while proving nothing about the requirement.
-      The EN pin route is closed too - the Pi header reaches nothing on this board (see button-gpio). This needs switched VBUS on the slot: a uhubctl-capable powered hub, or a relay in the slot's supply path.
-      The same part answers a second problem. The board currently draws from a Pi USB port whose rail collapses when the radio starts - measured 2026-08-06, 3-7 brownout resets a minute at 20 dBm, which is why the firmware ships at 15 dBm as a mitigation rather than a fix. A powered hub with per-port switching supplies a rail that holds AND gives this capability.
+    notes: 'Found missing 2026-08-05 while writing TS-079, which asks for 100 cycles. Nobody operates a lead a hundred times,
+      so the manual power-cycle capability cannot stand in - and neither can a reset: FR-NVS-03 is about a write interrupted
+      with the supply going away, and a JTAG or software reset leaves the flash controller to finish. Substituting either
+      would make the test pass while proving nothing about the requirement.
+
+      The EN pin route is closed too - the Pi header reaches nothing on this board (see button-gpio). This needs switched
+      VBUS on the slot: a uhubctl-capable powered hub, or a relay in the slot''s supply path.
+
+      The same part answers a second problem. The board currently draws from a Pi USB port whose rail collapses when the radio
+      starts - measured 2026-08-06, 3-7 brownout resets a minute at 20 dBm, which is why the firmware ships at 15 dBm as a
+      mitigation rather than a fix. A powered hub with per-port switching supplies a rail that holds AND gives this capability.
+
+      '
   second-board:
     what: A second gPlug-mini board, to prove entity identity follows the meter and not the device
     available: false
@@ -759,8 +815,7 @@ test_cases:
   expected: Every received byte is 0x55 - a polarity mismatch yields a uniform 0xD5 instead
   procedure: P-METER
   status: not done
-  reason: written and running; needs a firmware seam to pin the UART line setting, which the probe otherwise rotates
-    mid-test
+  reason: written and running; needs a firmware seam to pin the UART line setting, which the probe otherwise rotates mid-test
   commit: null
   when: null
 - id: TS-015
@@ -794,9 +849,9 @@ test_cases:
   expected: Both decode with no reflash between them - 6 objects per cycle either way
   procedure: P-METER
   status: successful
-  reason: Both serial lengths decoded 6 objects each, no reflash between them
-  commit: 2d27604
-  when: 2026-08-05T21:20Z
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-017
   kind: atomic
   scenario: deviation
@@ -810,9 +865,9 @@ test_cases:
   expected: A later cycle decodes; the disturbed one costs only itself
   procedure: P-METER
   status: successful
-  reason: Best cycle decoded 6 objects over 8 cycles after a mid-frame start
-  commit: 2d27604
-  when: 2026-08-05T21:20Z
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-018
   kind: atomic
   scenario: deviation
@@ -826,9 +881,9 @@ test_cases:
   expected: The first complete cycle after boot decodes; no second power cycle needed
   procedure: P-METER
   status: successful
-  reason: Best cycle decoded 6 objects over 8 cycles after a reset mid-transmission
-  commit: 2d27604
-  when: 2026-08-05T21:20Z
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-019
   kind: atomic
   scenario: negative
@@ -842,10 +897,10 @@ test_cases:
   does: Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
   expected: Frame 2 discarded and counted; frames 1, 3 and 4 still decode
   procedure: P-METER
-  status: successful
+  status: failed
   reason: No publish during the corrupted cycle
-  commit: 2d27604
-  when: 2026-08-05T21:20Z
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-020
   kind: atomic
   scenario: standard
@@ -859,8 +914,12 @@ test_cases:
   expected: Every byte received; the device's count matches the simulator's
   procedure: P-METER
   status: not done
-  reason: |
-    The simulator drops bytes and is not a meter, so this bench cannot show that every byte arrives - superseded by TS-103 at field tier. What runs here under this name is a link-health precondition (best cycle within 10% of what was sent), which says the rig is working as well as it ever does. It is not a verification of NFR-MTR-01 and must not be read as one.
+  reason: 'The simulator drops bytes and is not a meter, so this bench cannot show that every byte arrives - superseded by
+    TS-103 at field tier. What runs here under this name is a link-health precondition (best cycle within 10% of what was
+    sent), which says the rig is working as well as it ever does. It is not a verification of NFR-MTR-01 and must not be read
+    as one.
+
+    '
   commit: null
   when: null
 - id: TS-103
@@ -890,10 +949,10 @@ test_cases:
   does: Reads the installed meter and compares against the meter's own display
   expected: Values and identity match what the meter shows
   procedure: P-FIELD
-  status: not done
+  status: successful
   reason: null
-  commit: null
-  when: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-026
   kind: atomic
   scenario: standard
@@ -961,14 +1020,13 @@ test_cases:
   needs:
   - board
   - mbus-sim
-  does: Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several
-    cycles
+  does: Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several cycles
   expected: At least one cycle decodes, and each value carries the label and unit its register maps to
   procedure: P-METER
   status: successful
-  reason: passed 2026-08-05 - 144-byte cycles, 4-5 objects decoded each, labels and units correct
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-109
   kind: atomic
   scenario: standard
@@ -982,9 +1040,9 @@ test_cases:
   expected: The serial is read and reported - discovery is gated on it and publishes nothing without it
   procedure: P-METER
   status: successful
-  reason: passed 2026-08-05 - meter serial 44337811 read from the identity frame
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-110
   kind: atomic
   scenario: standard
@@ -1001,9 +1059,9 @@ test_cases:
   expected: At least two arrive; each is one complete non-empty JSON object, one per cycle
   procedure: P-NETWORK
   status: successful
-  reason: passed 2026-08-05 - 5 live state messages at the broker, power 777 W and energy 12345 exactly as sent
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-111
   kind: atomic
   scenario: standard
@@ -1020,9 +1078,9 @@ test_cases:
   expected: At least one config is retained and carries a unique_id keyed on the meter serial
   procedure: P-NETWORK
   status: successful
-  reason: passed 2026-08-05 - retained configs, unique_id keyed on the meter serial (44337811_*)
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-030
   kind: atomic
   scenario: standard
@@ -1298,8 +1356,7 @@ test_cases:
   expected: One retained config per Appendix B entity present in the cycle
   procedure: P-METER
   status: not done
-  reason: unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication
-    is unproven
+  reason: unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication is unproven
   commit: null
   when: null
 - id: TS-047
@@ -1390,8 +1447,7 @@ test_cases:
   tier: host
   needs: []
   does: Derives the SoftAP name and passphrase from a known MAC, and from a MAC one bit apart
-  expected: Both match the documented rule, differ between devices, and clear the WPA2 minimum; a short buffer reports
-    failure
+  expected: Both match the documented rule, differ between devices, and clear the WPA2 minimum; a short buffer reports failure
   procedure: ctest -R TS-104
   status: successful
   reason: null
@@ -1409,10 +1465,10 @@ test_cases:
   does: Enter Provisioning; attempt association with the derived passphrase, then a wrong one
   expected: Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
-  status: not done
-  reason: written 2026-08-05 in test_provisioning.py, including the wrong-passphrase half; awaiting a run
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-054
   kind: atomic
   scenario: security
@@ -1425,10 +1481,10 @@ test_cases:
   does: Enter Provisioning; attempt association with the derived passphrase, then a wrong one
   expected: Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
-  status: not done
-  reason: written 2026-08-05 in test_provisioning.py; awaiting a run
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-055
   kind: atomic
   scenario: standard
@@ -1441,10 +1497,9 @@ test_cases:
   expected: The configuration page is served
   procedure: P-METER
   status: successful
-  reason: passed 2026-08-05 - example.com/generate_204 and any path both return the form. Re-run once 4a6caf8 is
-    flashed; it changed page rendering
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-056
   kind: atomic
   scenario: deviation
@@ -1474,9 +1529,9 @@ test_cases:
   expected: Configuration survives
   procedure: P-METER
   status: successful
-  reason: passed 2026-08-05 - submission saved, device rebooted reporting cfg=nvs and joined the stored network
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-058
   kind: atomic
   scenario: deviation
@@ -1489,8 +1544,8 @@ test_cases:
   expected: Prior configuration intact
   procedure: P-METER
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-059
@@ -1505,11 +1560,10 @@ test_cases:
   does: Enter Provisioning with at least one access point in range
   expected: The configuration page lists it
   procedure: P-NETWORK
-  status: not done
-  reason: written 2026-08-05 in test_provisioning.py, and it also guards the scan moving out of the request path
-    in 4a6caf8; awaiting a run
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-060
   kind: atomic
   scenario: standard
@@ -1540,10 +1594,9 @@ test_cases:
   expected: Either it resolves and a session follows, or the portal states why it cannot
   procedure: P-NETWORK
   status: successful
-  reason: passed 2026-08-05 with a schemeless literal (192.168.4.1) rather than homeassistant.local - same rule,
-    refused with "broker URI has no scheme"
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-106
   kind: atomic
   scenario: negative
@@ -1552,8 +1605,7 @@ test_cases:
   - FR-OTA-02
   tier: host
   needs: []
-  does: Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an
-    overlong string
+  does: Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an overlong string
   expected: Both schemes accepted; everything malformed refused before anything is fetched
   procedure: ctest -R TS-106
   status: successful
@@ -1573,8 +1625,7 @@ test_cases:
   expected: Download begins within 5 s
   procedure: P-METER
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: errored in setup, so nothing was learned about the requirement - fix the precondition and re-run
   commit: null
   when: null
 - id: TS-063
@@ -1591,9 +1642,9 @@ test_cases:
   expected: No download
   procedure: P-OTA
   status: successful
-  reason: 90 s with an unannounced image in the relay produced no download
-  commit: 2d27604
-  when: 2026-08-05T21:20Z
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-064
   kind: atomic
   scenario: security
@@ -1607,8 +1658,8 @@ test_cases:
   expected: Download aborted, image not written
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-065
@@ -1624,8 +1675,8 @@ test_cases:
   expected: The image is written to the inactive slot
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-066
@@ -1642,8 +1693,8 @@ test_cases:
   expected: The image is never marked valid
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-067
@@ -1660,8 +1711,8 @@ test_cases:
   expected: The image is marked valid once the broker session is established
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-068
@@ -1677,8 +1728,8 @@ test_cases:
   expected: The previously valid image runs
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-069
@@ -1695,8 +1746,7 @@ test_cases:
   expected: Decoding continues
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: errored in setup, so nothing was learned about the requirement - fix the precondition and re-run
   commit: null
   when: null
 - id: TS-070
@@ -1713,8 +1763,8 @@ test_cases:
   expected: Download aborted, partial image discarded
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-071
@@ -1728,12 +1778,11 @@ test_cases:
   - mqtt-broker
   - mbus-sim
   does: Read a retained discovery payload at the broker after a session is established
-  expected: device.sw_version matches the running firmware's version string, and is neither blank nor
-    a build-time placeholder
+  expected: device.sw_version matches the running firmware's version string, and is neither blank nor a build-time placeholder
   procedure: P-NETWORK
   status: not done
-  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0);
-    the test itself is not written yet
+  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0); the test itself is not
+    written yet
   commit: null
   when: null
 - id: TS-105
@@ -1762,10 +1811,17 @@ test_cases:
   expected: Indication matches §11.3
   procedure: P-METER
   status: successful
-  reason: |
-    Passed on the acceptance rule for this rig: a few proper signals decode. In mode 2 - one 144-byte frame, 4.3 s of silence around it - every cycle decodes four objects including the meter identity, with no lead-in needed.
-    The measurement that prompted this stays on record because it is real and may matter at the meter. In mode 3 the full 417-byte telegram spans three GBT blocks, the board receives about 370 of them, and the missing bytes are always the opening 7E A0 95 of frame 1 - so the identity never survives. Six bytes of preamble removes it entirely; zero bytes decodes nothing.
-    That is a property of this simulator, not a firmware defect, and chasing it is not this project's work. Whether the installed meter shows the same head loss is a field question - TS-103.
+  reason: 'Passed on the acceptance rule for this rig: a few proper signals decode. In mode 2 - one 144-byte frame, 4.3 s
+    of silence around it - every cycle decodes four objects including the meter identity, with no lead-in needed.
+
+    The measurement that prompted this stays on record because it is real and may matter at the meter. In mode 3 the full
+    417-byte telegram spans three GBT blocks, the board receives about 370 of them, and the missing bytes are always the opening
+    7E A0 95 of frame 1 - so the identity never survives. Six bytes of preamble removes it entirely; zero bytes decodes nothing.
+
+    That is a property of this simulator, not a firmware defect, and chasing it is not this project''s work. Whether the installed
+    meter shows the same head loss is a field question - TS-103.
+
+    '
   commit: 15b05f5
   when: 2026-08-05T22:20Z
 - id: TS-073
@@ -1780,8 +1836,12 @@ test_cases:
   expected: Indication matches §11.3
   procedure: P-METER
   status: not done
-  reason: |
-    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  reason: 'The board''s LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs
+    each indication change as a seam and the test asserts that - which proves the state machine chose the right indication,
+    not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements
+    at once.
+
+    '
   commit: null
   when: null
 - id: TS-074
@@ -1796,8 +1856,12 @@ test_cases:
   expected: Indication matches §11.3
   procedure: P-METER
   status: not done
-  reason: |
-    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  reason: 'The board''s LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs
+    each indication change as a seam and the test asserts that - which proves the state machine chose the right indication,
+    not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements
+    at once.
+
+    '
   commit: null
   when: null
 - id: TS-075
@@ -1813,8 +1877,12 @@ test_cases:
   expected: Update pattern for the whole window
   procedure: P-OTA
   status: not done
-  reason: |
-    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  reason: 'The board''s LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs
+    each indication change as a seam and the test asserts that - which proves the state machine chose the right indication,
+    not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements
+    at once.
+
+    '
   commit: null
   when: null
 - id: TS-076
@@ -1829,8 +1897,12 @@ test_cases:
   expected: Indication matches §11.3
   procedure: P-METER
   status: not done
-  reason: |
-    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  reason: 'The board''s LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs
+    each indication change as a seam and the test asserts that - which proves the state machine chose the right indication,
+    not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements
+    at once.
+
+    '
   commit: null
   when: null
 - id: TS-102
@@ -1859,8 +1931,8 @@ test_cases:
   expected: The stored configuration values are readable
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-078
@@ -1875,8 +1947,8 @@ test_cases:
   expected: Device boots and enters Provisioning
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-079
@@ -1892,8 +1964,8 @@ test_cases:
   expected: Configuration intact each time
   procedure: P-METER
   status: not done
-  reason: needs power-cycle-endurance - unavailable. The firmware implements this as of 4a6caf8, and
-    the manual power-cycle capability cannot stand in, because nobody operates a lead a hundred times
+  reason: needs power-cycle-endurance - unavailable. The firmware implements this as of 4a6caf8, and the manual power-cycle
+    capability cannot stand in, because nobody operates a lead a hundred times
   commit: null
   when: null
 - id: TS-081
@@ -1908,8 +1980,8 @@ test_cases:
   expected: The device resets within the configured task-watchdog period (5 s)
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-082
@@ -1924,8 +1996,8 @@ test_cases:
   expected: Device resets within the timeout and returns to `OPERATIONAL`
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-083
@@ -1942,8 +2014,8 @@ test_cases:
   expected: No reset in either case
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-084
@@ -1957,11 +2029,10 @@ test_cases:
   does: Force a watchdog reset; read the console
   expected: Reset reason reported as watchdog
   procedure: P-TARGET
-  status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-085
   kind: atomic
   scenario: negative
@@ -2041,8 +2112,8 @@ test_cases:
   expected: Rejected, image not written
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-090
@@ -2058,8 +2129,8 @@ test_cases:
   expected: Rejected, image not written
   procedure: P-OTA
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-091
@@ -2075,9 +2146,9 @@ test_cases:
   expected: The network advertises WPA2
   procedure: P-NETWORK
   status: successful
-  reason: passed 2026-08-05 - the scan shows the SoftAP as WPA2, not open
-  commit: e1ce921
-  when: null
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-092
   kind: atomic
   scenario: security
@@ -2090,11 +2161,10 @@ test_cases:
   does: Request every portal endpoint after provisioning
   expected: No passphrase in any response body
   procedure: P-NETWORK
-  status: not done
-  reason: written 2026-08-05 in test_provisioning.py as the CP-008 check - an unreadable submission must not read
-    as a missing field; awaiting a run
-  commit: null
-  when: null
+  status: successful
+  reason: null
+  commit: 9ba9bb1
+  when: '2026-08-06'
 - id: TS-093
   kind: atomic
   scenario: security
@@ -2108,8 +2178,8 @@ test_cases:
   expected: The WiFi passphrase is readable in plaintext
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
-    and no longer a firmware gap
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
+    a firmware gap
   commit: null
   when: null
 - id: TS-094
@@ -2196,8 +2266,8 @@ test_cases:
   expected: Discovery topics appear only under the test prefix, and none under homeassistant/
   procedure: P-NETWORK
   status: not done
-  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0);
-    the test itself is not written yet
+  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0); the test itself is not
+    written yet
   commit: null
   when: null
 - id: TS-100
@@ -2450,22 +2520,21 @@ test_cases:
     - TS-071
   - id: restore
     action: restore_bench
-  expected: A factory-new device, touched only through its own portal, reaches OPERATIONAL and leaves at the broker
-    a retained discovery configuration for every entity the cycle contained, each carrying the classes and units
-    a consumer needs, alongside live state publications that follow the meter.
+  expected: A factory-new device, touched only through its own portal, reaches OPERATIONAL and leaves at the broker a retained
+    discovery configuration for every entity the cycle contained, each carrying the classes and units a consumer needs, alongside
+    live state publications that follow the meter.
   must_not:
   - the device joins an access point other than the configured BSSID
   - discovery is published before the meter identity is known
   - retained stale state is accepted as a live measurement
   - a discovery configuration exists for an entity absent from the cycle
   - a state_topic is published that nothing publishes to
-  status: not done
-  reason: written 2026-08-06 as testing/bench/test_wf001_commissioning.py, not yet run against hardware. Writing
-    it found two things no atomic case covers - the discovery payloads carry no device.sw_version (NFR-OTA-01,
-    a Must), and nothing had ever compared the state_topic the configs declare against the topic the device
-    publishes to
-  commit: null
-  when: null
+  status: failed
+  reason: written 2026-08-06 as testing/bench/test_wf001_commissioning.py, not yet run against hardware. Writing it found
+    two things no atomic case covers - the discovery payloads carry no device.sw_version (NFR-OTA-01, a Must), and nothing
+    had ever compared the state_topic the configs declare against the topic the device publishes to
+  commit: 9ba9bb1
+  when: '2026-08-06'
   evidence_required:
   - serial log from factory boot through OPERATIONAL
   - SoftAP SSID, BSSID and security observation
@@ -2556,9 +2625,9 @@ test_cases:
       oracle: decision:TDD-001.decision.oracle
   - id: restore
     action: restore_bench
-  expected: The ordered series of published energy values matches the simulated sequence exactly after unit conversion,
-    the accumulated delta equals the value TDD-001 fixes, and the discovery payloads carry the classes and unit that
-    make those values usable as an energy series.
+  expected: The ordered series of published energy values matches the simulated sequence exactly after unit conversion, the
+    accumulated delta equals the value TDD-001 fixes, and the discovery payloads carry the classes and unit that make those
+    values usable as an energy series.
   must_not:
   - energy decreases
   - energy is scaled twice
@@ -2566,8 +2635,8 @@ test_cases:
   - an absent register is published as zero
   - a published value is inferred from a retained message rather than a fresh one
   status: not done
-  reason: unblocked 2026-08-06 by moving the oracle from the Energy Dashboard to the published series and the discovery
-    payload (FSD 22.0); the workflow is not implemented yet
+  reason: unblocked 2026-08-06 by moving the oracle from the Energy Dashboard to the published series and the discovery payload
+    (FSD 22.0); the workflow is not implemented yet
   commit: null
   when: null
   evidence_required:
@@ -2658,8 +2727,8 @@ test_cases:
     - TS-110
   - id: restore
     action: restore_bench
-  expected: The device remains unattended, never enters Provisioning, reconnects to the intended access point and
-    broker, and resumes fresh measurement publication.
+  expected: The device remains unattended, never enters Provisioning, reconnects to the intended access point and broker,
+    and resumes fresh measurement publication.
   must_not:
   - manual reset is required
   - Provisioning appears during the outage
@@ -2749,8 +2818,8 @@ test_cases:
       timeout_s: 60
   - id: restore
     action: restore_bench
-  expected: The new image runs from the previously inactive slot, reaches the broker, is marked valid, reports the
-    new version and resumes normal publication.
+  expected: The new image runs from the previously inactive slot, reaches the broker, is marked valid, reports the new version
+    and resumes normal publication.
   must_not:
   - the update starts without a command
   - the old version remains reported after successful validation
@@ -2829,8 +2898,7 @@ test_cases:
       timeout_s: 60
   - id: restore
     action: restore_bench
-  expected: The unvalidated image is abandoned and the previously valid image and slot return to normal broker-connected
-    operation.
+  expected: The unvalidated image is abandoned and the previously valid image and slot return to normal broker-connected operation.
   must_not:
   - the broken image is marked valid
   - recovery is inferred only because some firmware is alive
@@ -2898,8 +2966,7 @@ test_cases:
       topic: gplug/<mac>/state
       minimum_messages: 2
       timeout_s: 120
-  expected: The installed meter identity and published values agree with the real meter display within the declared
-    tolerance.
+  expected: The installed meter identity and published values agree with the real meter display within the declared tolerance.
   must_not:
   - simulator evidence is substituted for real-meter evidence
   - a partial or stale publication is accepted as the comparison value
@@ -2975,8 +3042,8 @@ test_cases:
     checkpoint_tests:
     - TS-021
     - TS-103
-  expected: The device remains useful for 24 hours on real meter power with cabinet WiFi, publishing fresh measurements
-    without human intervention.
+  expected: The device remains useful for 24 hours on real meter power with cabinet WiFi, publishing fresh measurements without
+    human intervention.
   must_not:
   - the observation window is shortened
   - retained MQTT values are counted as continuous operation
@@ -3078,8 +3145,8 @@ test_cases:
     - TS-110
   - id: restore
     action: restore_bench
-  expected: Meter ingestion continues while the broker is unavailable. After restoration, a new MQTT session is
-    established, discovery is republished and fresh measurements resume.
+  expected: Meter ingestion continues while the broker is unavailable. After restoration, a new MQTT session is established,
+    discovery is republished and fresh measurements resume.
   must_not:
   - the DUT resets because the broker is unavailable
   - offline measurement sets are replayed
@@ -3178,8 +3245,8 @@ test_cases:
     - TS-110
   - id: restore
     action: restore_bench
-  expected: Network service remains available during meter silence, no stale measurement is published, and a fresh
-    measurement is published when meter traffic returns.
+  expected: Network service remains available during meter silence, no stale measurement is published, and a fresh measurement
+    is published when meter traffic returns.
   must_not:
   - the DUT resets
   - the previous measurement is republished
@@ -3254,8 +3321,8 @@ test_cases:
     action: inspect_ota_state
   - id: restore
     action: restore_bench
-  expected: The production image boots, joins the intended WiFi network and MQTT broker, reports the correct version,
-    and produces no simulated meter or production-entity data without meter input.
+  expected: The production image boots, joins the intended WiFi network and MQTT broker, reports the correct version, and
+    produces no simulated meter or production-entity data without meter input.
   must_not:
   - capture data exists in the production image
   - the image reports a simulated variant
@@ -3351,8 +3418,8 @@ test_cases:
     - TS-031
   - id: restore
     action: restore_bench
-  expected: A running device enters Provisioning through the physical button, accepts replacement configuration,
-    becomes OPERATIONAL on the replacement network and retains that configuration after reset.
+  expected: A running device enters Provisioning through the physical button, accepts replacement configuration, becomes OPERATIONAL
+    on the replacement network and retains that configuration after reset.
   must_not:
   - the button causes serial-download mode
   - the prior configuration is lost before replacement values are accepted
@@ -3451,8 +3518,8 @@ test_cases:
     - TS-110
   - id: restore
     action: restore_bench
-  expected: The watchdog resets the stalled device within the configured period. Stored configuration survives,
-    WiFi and MQTT recover automatically, and fresh meter publication resumes.
+  expected: The watchdog resets the stalled device within the configured period. Stored configuration survives, WiFi and MQTT
+    recover automatically, and fresh meter publication resumes.
   must_not:
   - the reset reason is ambiguous or unavailable
   - manual reset or reconfiguration is required
@@ -3565,9 +3632,9 @@ test_cases:
     - TS-110
   - id: restore
     action: restore_bench
-  expected: After actual supply power is restored, the device reads its stored configuration, skips Provisioning,
-    rejoins the configured WiFi and MQTT broker, identifies the meter, republishes discovery and resumes fresh measurement
-    publication without intervention.
+  expected: After actual supply power is restored, the device reads its stored configuration, skips Provisioning, rejoins
+    the configured WiFi and MQTT broker, identifies the meter, republishes discovery and resumes fresh measurement publication
+    without intervention.
   must_not:
   - Provisioning starts
   - stored configuration is lost
@@ -3602,14 +3669,14 @@ test_design_decisions:
       final_energy_wh: 20024000
     expected_delta_kwh: 24.0
     publication_loss_allowed: 0
-    oracle: All 25 publications arrive. The ordered published values match the generated sequence exactly after unit
-      conversion, and the observed accumulated delta is 24.000 kWh. Each energy entity's discovery payload carries
-      device_class energy, state_class total_increasing and unit kWh.
-  rationale: Twenty-five accelerated samples represent hour 0 through hour 24. The starting counter is above the
-    exact-float boundary and therefore also exercises integer precision without requiring a real 24-hour run.
-    Revised 2026-08-06 - the oracle read "accepted by Home Assistant" and carried a 600 s statistics timeout, which
-    made the decision depend on a consumer that FSD 22.0 puts outside the system under test. What the Energy Dashboard
-    actually requires of us is the three payload keys, so those are asserted directly and the timeout is gone.
+    oracle: All 25 publications arrive. The ordered published values match the generated sequence exactly after unit conversion,
+      and the observed accumulated delta is 24.000 kWh. Each energy entity's discovery payload carries device_class energy,
+      state_class total_increasing and unit kWh.
+  rationale: Twenty-five accelerated samples represent hour 0 through hour 24. The starting counter is above the exact-float
+    boundary and therefore also exercises integer precision without requiring a real 24-hour run. Revised 2026-08-06 - the
+    oracle read "accepted by Home Assistant" and carried a 600 s statistics timeout, which made the decision depend on a consumer
+    that FSD 22.0 puts outside the system under test. What the Energy Dashboard actually requires of us is the three payload
+    keys, so those are asserted directly and the timeout is gone.
 - id: TDD-002
   status: decided
   subject: Maximum duration of a valid OTA workflow
@@ -3624,9 +3691,8 @@ test_design_decisions:
     rollback_reset_after_bad_image_boot_s: 65
     max_rollback_boot_s: 30
     max_rollback_mqtt_recovery_s: 60
-  rationale: Five minutes is ample for a local firmware download and flash write, while the 60-second post-boot
-    limit follows the MQTT recovery contract. The rollback reset occurs only after the full validation window has
-    elapsed.
+  rationale: Five minutes is ample for a local firmware download and flash write, while the 60-second post-boot limit follows
+    the MQTT recovery contract. The rollback reset occurs only after the full validation window has elapsed.
 - id: TDD-003
   status: decided
   subject: Real-meter comparison tolerance
@@ -3641,8 +3707,8 @@ test_design_decisions:
     identity: exact match
     energy_tolerance: one least-significant digit of the meter display after unit conversion
     power_tolerance: maximum of one display least-significant digit, 10 W, or 2 percent of the displayed value
-  rationale: Energy is cumulative and should match to the meter display resolution. Instantaneous power needs a
-    small allowance for display rounding and sampling skew, while three separated pairs prevent a one-off coincidence.
+  rationale: Energy is cumulative and should match to the meter display resolution. Instantaneous power needs a small allowance
+    for display rounding and sampling skew, while three separated pairs prevent a one-off coincidence.
 - id: TDD-004
   status: decided
   subject: Production-image smoke-test observation window
@@ -3658,8 +3724,8 @@ test_design_decisions:
     allowed_publications:
     - availability or status
     - version and diagnostics that contain no meter values
-  rationale: Thirty seconds covers several normal five-second meter publication opportunities without turning a
-    smoke test into a soak test.
+  rationale: Thirty seconds covers several normal five-second meter publication opportunities without turning a smoke test
+    into a soak test.
 - id: TDD-005
   status: decided
   subject: Physical and repeatable reconfiguration test method
@@ -3669,13 +3735,13 @@ test_design_decisions:
     release_workflow_method: manual operation of the actual device button
     runtime_hold_ms: 5000
     softap_timeout_s: 5
-    boot_strap_check: Hold the actual button through reset once; the device must boot normally and must not enter
-      serial-download mode.
-    repeatable_regression_method: A firmware test seam may inject the logical five-second event for routine regression,
-      but it does not replace the physical release test.
+    boot_strap_check: Hold the actual button through reset once; the device must boot normally and must not enter serial-download
+      mode.
+    repeatable_regression_method: A firmware test seam may inject the logical five-second event for routine regression, but
+      it does not replace the physical release test.
     physical_test_frequency: first product release and after a hardware, GPIO or button-handling change
-  rationale: One physical test proves the real GPIO path. A logical seam is useful for repetition but cannot prove
-    wiring or boot-strap behaviour.
+  rationale: One physical test proves the real GPIO path. A logical seam is useful for repetition but cannot prove wiring
+    or boot-strap behaviour.
 release_gates:
   firmware_release:
     status: proposed
@@ -3708,5 +3774,5 @@ release_gates:
   subsequent_firmware_release:
     status: proposed
     inherits: firmware_release
-    field_evidence_policy: WF-006 and WF-007 may be carried forward only when an impact analysis confirms that meter
-      handling, hardware, power, WiFi and timing behaviour are unchanged.
+    field_evidence_policy: WF-006 and WF-007 may be carried forward only when an impact analysis confirms that meter handling,
+      hardware, power, WiFi and timing behaviour are unchanged.
