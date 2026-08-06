@@ -64,7 +64,9 @@ void on_mqtt(void*, esp_event_base_t, int32_t id, void* data) {
     case MQTT_EVENT_CONNECTED:
       ESP_LOGI(TAG, "broker connected");
       connected = true;
-      ++session_id;
+      // Written as an assignment, not ++: incrementing a volatile is
+      // deprecated in C++20 and this project builds with -Werror.
+      session_id = session_id + 1;
       // Availability is retained so a subscriber that arrives later still
       // learns the device is up (FR-HA-06).
       esp_mqtt_client_publish(client, status_top, "online", 0, 1, 1);
