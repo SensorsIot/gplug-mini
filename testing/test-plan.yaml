@@ -806,7 +806,7 @@ test_cases:
   expected: The chip reports 2400 8E1, receive inversion on, both internal pulls off
   procedure: P-TARGET
   status: not done
-  reason: test not written
+  reason: written 2026-08-06 in testing/target/main/target_tests.cpp; builds in CI; needs flashing to the DUT to run
   commit: null
   when: null
 - id: TS-022
@@ -1102,7 +1102,8 @@ test_cases:
   expected: SoftAP appears within 10 s
   procedure: P-TARGET
   status: not done
-  reason: test not written
+  reason: written 2026-08-06 in testing/target (chip half - an erased namespace must read as absent, not as empty); builds
+    in CI
   commit: null
   when: null
 - id: TS-031
@@ -1234,7 +1235,8 @@ test_cases:
   expected: Provisioning entered in each of the three cases
   procedure: P-METER
   status: not done
-  reason: test not written
+  reason: written 2026-08-06 in testing/bench/test_config.py, parametrised over the three required fields; unrun - bench off
+    the network
   commit: null
   when: null
 - id: TS-039
@@ -1251,7 +1253,7 @@ test_cases:
   expected: A broker session is established
   procedure: P-NETWORK
   status: not done
-  reason: test not written
+  reason: written 2026-08-06 in testing/bench/test_config.py; unrun - bench off the network
   commit: null
   when: null
 - id: TS-040
@@ -1557,8 +1559,7 @@ test_cases:
   expected: Prior configuration intact
   procedure: P-METER
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
-    a firmware gap
+  reason: written 2026-08-06 in testing/bench/test_config.py; unrun - bench off the network
   commit: null
   when: null
 - id: TS-059
@@ -1590,7 +1591,7 @@ test_cases:
   expected: Association succeeds within 10 s of entering the state
   procedure: P-NETWORK
   status: not done
-  reason: unrun - association works, but the timing NFR was never measured
+  reason: written 2026-08-06 in testing/bench/test_config.py; unrun - bench off the network
   commit: null
   when: null
 - id: TS-061
@@ -1944,8 +1945,7 @@ test_cases:
   expected: The stored configuration values are readable
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
-    a firmware gap
+  reason: written 2026-08-06 in testing/target; builds in CI
   commit: null
   when: null
 - id: TS-078
@@ -1960,8 +1960,7 @@ test_cases:
   expected: Device boots and enters Provisioning
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
-    a firmware gap
+  reason: written 2026-08-06 in testing/target; builds in CI
   commit: null
   when: null
 - id: TS-079
@@ -1993,8 +1992,7 @@ test_cases:
   expected: The device resets within the configured task-watchdog period (5 s)
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
-    a firmware gap
+  reason: written 2026-08-06 in testing/target; builds in CI
   commit: null
   when: null
 - id: TS-082
@@ -2191,8 +2189,8 @@ test_cases:
   expected: The WiFi passphrase is readable in plaintext
   procedure: P-TARGET
   status: not done
-  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer
-    a firmware gap
+  reason: written 2026-08-06 in testing/target - asserts the NON-claim, that the passphrase IS readable, so enabling encryption
+    without updating NFR-SEC-01 is caught; builds in CI
   commit: null
   when: null
 - id: TS-094
