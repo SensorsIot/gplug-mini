@@ -1,0 +1,18 @@
+{
+  "workflow": "WF-001",
+  "validates": "AC-1",
+  "steps": [
+    {
+      "step": "arrange",
+      "detail": "simulator on identity none, retained discovery cleared",
+      "at": 1786013029.5220747
+    },
+    {
+      "step": "factory boot",
+      "detail": "NVS blanked by the fixture",
+      "at": 1786013037.2384958
+    }
+  ],
+  "cleared_retained_configs": [],
+  "portal_ssid": "gplug-98012d"
+}

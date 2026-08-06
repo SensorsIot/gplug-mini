@@ -477,6 +477,14 @@ def unprovisioned(wb, dut):
     gentler, but it needs a GPIO wired to the board and this bench has none —
     which is recorded as the `button-gpio` capability being unavailable.
     """
+    # The bench radio does one thing at a time. Every portal test either scans
+    # for the device's SoftAP or joins it, and neither is possible while the
+    # bench is being an access point — a scan run in AP mode returns nothing and
+    # the test reports the DUT as "not on the air" when it is broadcasting
+    # perfectly. Asserted here rather than trusted, because a test that failed
+    # before its own cleanup leaves the AP up for whatever runs next.
+    wb.ap_stop()
+
     result = wb.flash_region("SLOT1", "esp32c3", NVS_OFFSET, b"\xff" * NVS_SIZE)
     assert result.get("ok"), f"could not blank NVS, so the portal cannot be reached: {result}"
     yield
