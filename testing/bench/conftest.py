@@ -202,18 +202,63 @@ class Dut:
     def await_line(self, pattern, seconds=30):
         """A line matching `pattern`, or fail.
 
-        A timeout is a failure, not an absent result. Nothing on the device
-        returns an exit code, and a board that crashes or hangs prints nothing
-        at all — so "no match seen" must be a positive failure, never a pass.
-        """
-        result = self.wb.serial_monitor(DUT, pattern=pattern, timeout=seconds)
-        if not result.get("matched"):
-            tail = "\n  ".join((result.get("output") or [])[-12:])
-            pytest.fail(f"no line matched {pattern!r} in {seconds}s. Last output:\n  {tail}")
-        return result["line"]
+        Polled in short windows and matched here, rather than handing the
+        pattern to one long monitor call. A single long call binds to the serial
+        endpoint it had when it started, and on this board that endpoint does
+        not survive a reset: the call then sits out its whole window against a
+        device that is printing perfectly into a port nobody is reading.
+        Measured 2026-08-06 — a 60 s pattern monitor returned nothing while a
+        15 s one issued moments later caught three lines.
 
-    def reset(self):
+        A timeout is still a failure, not an absent result. Nothing on the
+        device returns an exit code, and a board that crashes or hangs prints
+        nothing at all — so "no match seen" must be a positive failure, never a
+        pass.
+        """
+        rx = re.compile(pattern)
+        deadline = time.monotonic() + seconds
+        seen = []
+        while time.monotonic() < deadline:
+            try:
+                result = self.wb.serial_monitor(DUT, timeout=POLL_SECONDS)
+            except Exception:
+                time.sleep(1)
+                continue
+            for line in result.get("output") or []:
+                if line not in seen:
+                    seen.append(line)
+                if rx.search(line):
+                    return line
+        tail = "\n  ".join(seen[-12:]) or "(nothing at all)"
+        pytest.fail(f"no line matched {pattern!r} in {seconds}s. Last output:\n  {tail}")
+
+    def reset(self, settle=True):
+        """Reset the board and wait until its console can be read again.
+
+        On this bench the reset goes over JTAG — `/api/serial/reset` reports
+        `method: jtag` and ignores any method asked for, because SLOT1 is a
+        native-USB part where reset and console share one interface. The CPU
+        restarts immediately; the USB device re-enumerates a moment later, and
+        anything that reads in between reads silence.
+
+        Not waiting here cost a whole suite run on 2026-08-06: every test that
+        reset the board saw an empty console and failed as though the firmware
+        were dead, while a hard reset over the same cable printed normally.
+        """
         self.wb.serial_reset(DUT)
+        if not settle:
+            return
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                slot = self.wb.get_slot(DUT)
+            except Exception:
+                slot = {}
+            if slot.get("devnode") and slot.get("state") in ("idle", "monitoring"):
+                break
+            time.sleep(1)
+        # The slot reports ready before the CDC is actually carrying data.
+        time.sleep(6)
 
     def boot_banner(self, seconds=20):
         """Reset and return the identifying banner, so the running image is known."""
