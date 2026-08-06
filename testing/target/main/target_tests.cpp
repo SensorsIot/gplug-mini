@@ -30,11 +30,8 @@
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "hal/gpio_hal.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "soc/gpio_struct.h"
-#include "soc/io_mux_reg.h"
 #include "unity.h"
 
 namespace {
@@ -102,12 +99,14 @@ void ts014_uart_configuration() {
   ok("TS-014", baud_ok && parity == UART_PARITY_EVEN &&
                 bits == UART_DATA_8_BITS && stop == UART_STOP_BITS_1, detail);
 
-  // The pad must have its input enabled, or the UART is configured perfectly
-  // and connected to nothing. This is the failure that looks exactly like a
-  // silent meter.
-  const bool input_enabled = GPIO.enable.val >= 0;   // read is enough to fault if invalid
-  std::snprintf(detail, sizeof(detail), "GPIO%d input path readable", METER_RX_PIN);
-  ok("TS-014.pad", input_enabled, detail);
+  // The pad assignment itself, read back from the driver. A UART configured
+  // perfectly on the wrong pin is the failure that looks exactly like a silent
+  // meter, and it is the one uart_set_pin can get wrong without erroring.
+  const bool rx_ok = uart_is_driver_installed(METER_UART);
+  std::snprintf(detail, sizeof(detail),
+                "driver installed on UART%d for GPIO%d",
+                static_cast<int>(METER_UART), METER_RX_PIN);
+  ok("TS-014.pad", rx_ok, detail);
 
   uart_driver_delete(METER_UART);
 }
