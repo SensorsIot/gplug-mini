@@ -31,6 +31,7 @@ import time
 import pytest
 
 from conftest import BENCH_PASS, BENCH_SSID, BROKER_URI
+from workbench_driver import CommandError
 
 pytestmark = [pytest.mark.provisioning, pytest.mark.disruptive]
 
@@ -173,8 +174,17 @@ def test_ts053_the_derived_passphrase_admits_and_a_wrong_one_does_not(unprovisio
         assert joined.get("ip"), "associated but never got an address"
         wb.sta_leave()
 
-        wrong = wb.sta_join(ssid, "definitelynotright", timeout=20)
-        print(f"  wrong passphrase -> {wrong}")
+        # A refusal reaches us two ways and both are the same result. The driver
+        # raises when the bench reports it could not associate, and returns a
+        # bare dict when it associated but never got a lease. Only an address
+        # means the passphrase was accepted.
+        try:
+            wrong = wb.sta_join(ssid, "definitelynotright", timeout=20)
+        except CommandError as refused:
+            print(f"  wrong passphrase -> refused: {refused}")
+            wrong = {}
+        else:
+            print(f"  wrong passphrase -> {wrong}")
         assert not wrong.get("ip"), (
             "a wrong passphrase was admitted — the network is advertised as WPA2 "
             "but is not actually protecting anything"

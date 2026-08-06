@@ -1,0 +1,31 @@
+{
+  "workflow": "WF-001",
+  "validates": "AC-1",
+  "steps": [
+    {
+      "step": "arrange",
+      "detail": "simulator on identity none, retained discovery cleared",
+      "at": 1786012355.3060343
+    },
+    {
+      "step": "factory boot",
+      "detail": "NVS blanked by the fixture",
+      "at": 1786012363.0220041
+    },
+    {
+      "step": "open the portal",
+      "detail": "",
+      "at": 1786012378.3737328
+    },
+    {
+      "step": "submit the form",
+      "detail": "ssid=wb-7cb1c2 broker=mqtt://192.168.0.168:1883",
+      "at": 1786012390.8828816
+    }
+  ],
+  "cleared_retained_configs": [],
+  "portal_ssid": "gplug-98012d",
+  "portal_auth": "WPA2",
+  "portal_lease": "192.168.4.2",
+  "save_status": 200
+}
