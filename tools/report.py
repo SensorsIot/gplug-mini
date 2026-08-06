@@ -8,6 +8,12 @@ its sources - which is the whole reason coverage is not a hand-kept column.
     tools/report.py            group by requirement
     tools/report.py --tier     group by tier
     tools/report.py --gaps     only what is not verified
+    tools/report.py --gates    release-gate readiness
+
+Atomic cases and workflows are never summed together. They answer different
+questions - "which specified behaviour failed?" and "does the product do its
+job?" - and a single passed/total hides the case where every component passes
+and the journey between them does not.
 """
 import argparse, collections, pathlib, re, sys
 
@@ -29,11 +35,14 @@ def load():
         m = re.match(r'^\| \*\*(N?FR-[A-Z]+-\d+)\*\* \| (\w+) \| ([^|]+)\|', line)
         if m:
             reqs[m.group(1)] = (m.group(2), m.group(3).strip())
-    return reqs, plan['capabilities'], plan['tests']
+    cases = plan['test_cases']
+    atomic = [t for t in cases if t.get('kind') == 'atomic']
+    flows  = [t for t in cases if t.get('kind') == 'workflow']
+    return reqs, plan['capabilities'], atomic, flows, plan.get('release_gates', {})
 
 
 def blocked_by(test, caps):
-    return [n for n in test['needs'] if n in caps and not caps[n]['available']]
+    return [n for n in test.get('needs') or [] if n in caps and not caps[n]['available']]
 
 
 def status_of(test, caps):
@@ -92,29 +101,75 @@ def gaps(reqs, caps, tests):
         print(f'  {r:12} {reqs[r][1][:70]}')
 
 
-def balance(tests):
-    """The four kinds and their share.
+def balance(atomic, flows):
+    """The four scenarios and their share, atomic and workflow kept apart.
 
     Printed on every report because the tilt is what goes wrong quietly:
     negatives accumulate one defect at a time, each of them justified, and
     nobody notices the standard case was never written. This plan reached 108
     tests with the standard meter journey still unwritten.
     """
-    c = collections.Counter(t.get('kind', '?') for t in tests)
+    c = collections.Counter(t.get('scenario', '?') for t in atomic)
     total = sum(c.values())
-    print('balance of test kinds')
+    print('balance of atomic scenarios')
     for k in ('standard', 'deviation', 'negative', 'security'):
         print(f'  {k:10} {c[k]:4}  {100 * c[k] // total:>3}%')
     if c['standard'] + c['deviation'] < c['negative'] + c['security']:
         print('  ** more fault-finding than function — the standard case is under-tested')
+    done = sum(1 for t in atomic if t['status'] == 'successful')
+    wdone = sum(1 for w in flows if w['status'] == 'successful')
+    print(f"\n  {done}/{len(atomic)} atomic cases passing"
+          f"   ·   {wdone}/{len(flows)} workflows passing")
+    if wdone == 0 and done:
+        print('  ** every component result is isolated — no journey has been proven end to end')
     print()
+
+
+def workflows(caps, flows):
+    """Workflows on their own, because a green component says nothing about them."""
+    print(f"{'Workflow':8} {'Role':16} {'Tier':6} {'Status':8} Proves")
+    print('-' * 96)
+    for w in sorted(flows, key=lambda x: x['id']):
+        st, note = status_of(w, caps)
+        print(f"  {w['id']:6} {w.get('role', '—'):16} {w['tier']:6} {st:8} {w['name'][:44]}")
+        if st != 'PASS':
+            print(f"  {'':6} {'':16} {'':6} {'':8} {note[:70]}")
+
+
+def gates(caps, flows, gate_defs):
+    """What a tag would be asserting, resolved against the current baseline."""
+    by_id = {w['id']: w for w in flows}
+    for name, gate in gate_defs.items():
+        req = gate.get('requires', {}) or gate.get('additionally_requires', {}) or {}
+        wanted = req.get('workflows', [])
+        print(f"\n=== {name}  ({gate.get('status', '?')}) " + '=' * (58 - len(name)))
+        if gate.get('inherits'):
+            print(f"  inherits {gate['inherits']}")
+        for wid in wanted:
+            w = by_id.get(wid)
+            if not w:
+                print(f"  {wid:8} UNKNOWN — the gate references a workflow that does not exist")
+                continue
+            st, note = status_of(w, caps)
+            print(f"  {wid:8} {st:8} {w['name'][:40]:42} {note[:28]}")
+        blockers = [w for wid in wanted if (w := by_id.get(wid))
+                    and status_of(w, caps)[0] != 'PASS']
+        print(f"  → {len(wanted) - len(blockers)}/{len(wanted)} satisfied"
+              + ('' if not blockers else f", {len(blockers)} blocking"))
 
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--tier', action='store_true')
     ap.add_argument('--gaps', action='store_true')
+    ap.add_argument('--gates', action='store_true')
     a = ap.parse_args()
-    reqs, caps, tests = load()
-    balance(tests)
-    (by_tier if a.tier else gaps if a.gaps else by_requirement)(reqs, caps, tests)
+    reqs, caps, atomic, flows, gate_defs = load()
+    balance(atomic, flows)
+    if a.gates:
+        gates(caps, flows, gate_defs)
+    else:
+        (by_tier if a.tier else gaps if a.gaps else by_requirement)(reqs, caps, atomic)
+        if not a.gaps:
+            print()
+            workflows(caps, flows)

@@ -2,1721 +2,3705 @@
 #
 # What must be proved lives in the FSD; this file says how it will be proved,
 # with what equipment, and what happened last time. Requirements are referenced
-# by ID and never restated — docs/Functionality/gPlug-mini-FSD.md is the
-# authority on what the device must do.
+# by ID and never restated.
 #
-# `tier` is a field, not part of the id. A test can move tier — a check that
-# needs a firmware seam may only be possible on the device — and ids are stable,
-# so encoding a mutable fact in an immutable name would force a choice between
-# renaming a stable id and keeping one that lies. The id's prefix stays as a
-# convention; the generator warns when prefix and tier disagree.
+# It defines test DESIGN. A definition here is not a claim that the test is
+# written, let alone that it ran: `status`, `reason`, `commit` and `when` are
+# written by the runner and by nothing else.
 #
-# `kind` is what the test is for, and the balance between the four is a design
-# property worth watching rather than an accident:
+# Two independent classifications, and conflating them is the mistake this
+# schema exists to prevent:
 #
-#   standard    the ordinary case — the product doing its job
-#   deviation   still normal, just not the simplest case: either serial length,
-#               a quiet meter, waking mid-transmission, a `.local` broker
-#   negative    a fault or malfunction is injected
-#   security    derived from the threat profile in FSD §18.1, not from a feature
+#   kind      atomic | workflow            structural level
+#   scenario  standard | deviation | negative | security    what is exercised
 #
-# Build them in that order and keep the volume tilted towards the first two. A
-# suite heavy on negatives is a suite that has never checked the product works —
-# this one reached 108 tests with the standard case for the whole meter journey
-# still unwritten, and a defect that stopped the device publishing entirely was
-# found sideways through an unrelated test.
+# An atomic case answers "which specified behaviour failed?". A workflow answers
+# "does the product do its job?". Workflow status is NOT derived from its
+# children - all children green with the workflow red is an integration defect,
+# and that is a result worth being able to express.
 #
-# Security is separate because it derives from a threat model rather than a
-# feature, and carries its own rule: the criterion must be able to fail.
-# "Credentials are protected" cannot; "the passphrase appears in no portal
-# response" can.
+# How to derive, write, validate and run all of this is
+# docs/Harness/standards/testing.md.
 #
-# `expected` is what this particular test observes, not a copy of the
-# requirement's expected observation. One requirement usually needs several
-# tests — positive, boundary, negative — each seeing a different part of it.
-#
-# The last four fields of every test are written by the runner and never by
-# hand. A status carrying a commit that is not HEAD is stale: it says what
-# happened then, not what happens now.
-#
-#   status:  not done | successful | failed
-#   reason:  why, when the status is `not done`
-#   commit:  what it ran against
-#   when:    when it ran
-#
-# Procedures (P-*) are in docs/Harness/standards/testing.md.
-
-# ─────────────────────────────────────────────────────────────────────────
-# Capabilities
-#
-# What the environment must provide for a test to run at all. A test needing
-# one that is unavailable is `not done` for that reason — computed, not typed,
-# so an absent rig can never be mistaken for a passing one.
-#
-# This lists what THIS project's tests need. The workbench can do more (BLE,
-# SDR, signal generation); none of it is used here, so none of it is listed.
-# ─────────────────────────────────────────────────────────────────────────
-
+metadata:
+  project: gPlug-mini
+  document: Hierarchical test plan
+  source: testing/test-plan.yaml
+  schema_version: '1.1'
+  design:
+    single_file: true
+    test_case_kinds:
+    - atomic
+    - workflow
+    scenarios:
+    - standard
+    - deviation
+    - negative
+    - security
+    statuses:
+    - not done
+    - successful
+    - failed
+    - blocked
+    - retired
+    hierarchy: A workflow lists atomic test cases in children. A child may support more than one workflow. children
+      express traceability and test design; the workflow executes its own continuous steps using actions.
+    result_rule: Workflow status is independent of child status. All children can pass while the workflow fails
+      at an integration handoff, and a workflow can pass while some atomic boundary or diagnostic tests remain incomplete.
+    workflow_required_fields:
+    - id
+    - kind
+    - scenario
+    - name
+    - children
+    - tier
+    - needs
+    - start_state
+    - steps
+    - expected
+    - must_not
+    - evidence_required
+    workflow_design_rules:
+    - A workflow is one continuous execution; it does not run its children as isolated test sessions.
+    - children provide hierarchical traceability to atomic contracts exercised at workflow checkpoints.
+    - A workflow must prove an externally useful final result across at least one component boundary.
+    - Every important handoff must have a checkpoint or observable result.
+    - Workflow status is independent of the status of its children.
+    - Unknown test limits must reference an explicit test-design decision; free-text placeholders are not executable.
+    - A workflow must define required evidence even though evidence is collected only during later execution.
+    coverage_policy:
+      requirements: Every Must and Should requirement has at least one atomic test.
+      acceptance: Every FSD acceptance scenario has a primary workflow.
+      goals: Every product goal is covered by at least one release-gate workflow.
+      state_machine: Every normative supervisor transition has atomic coverage; useful multi-transition paths have
+        workflow coverage.
+      risks: Network, broker, meter, watchdog, update and persistence recovery are represented by workflows or atomic
+        tests.
+  migration:
+    existing_atomic_tests: 109
+    added_workflows: 13
+    old_kind_moved_to: scenario
+    new_kind_values:
+    - atomic
+    - workflow
+    existing_results: carried forward unchanged except TS-025 status normalized to retired
+    enhancement: Added broker-outage, meter-silence, production-image, reconfiguration and watchdog-recovery workflows;
+      structured capability parameters; explicit unresolved test-design decisions; workflow evidence contracts;
+      and proposed release gates.
+    final_design_changes:
+    - Corrected all structured capability and fixture references.
+    - Added WF-013 for normal unattended startup after power restoration.
+    - Resolved TDD-001 through TDD-005 with concrete, shipping-focused decisions.
+    - Represented the manually operated physical button separately from unavailable automated GPIO actuation.
 capabilities:
-
   board:
-    what:      The gPlug-mini board in workbench slot 1, resettable and readable over serial
-    available: yes
-
+    what: The gPlug-mini board in workbench slot 1, resettable and readable over serial
+    available: true
   mbus-sim:
-    what:      MBUS-Simulator in workbench slot 3, driven over its console
-    available: yes
-    notes:     modes 1-4, plus fault / gap / silence / serial / identity / energy / scaler
-    notes2: >
-      The console is driven over the RFC2217 proxy on port 4003 at 115200, not
-      through the workbench HTTP API, which can read serial but not write it.
-      The proxy takes ONE client, so a per-test connection races its own
-      teardown - testing/bench/conftest.py holds one for the session.
-
-      Its `status` line reports the state it is actually in. Check it rather than
-      assuming: it has been found on `identity none`, which makes every discovery
-      test fail for a reason that has nothing to do with the device.
-    limitation: >
-      Mode 2 is the signal to test through, and it is solid. Measured 2026-08-05
-      over ten minutes: 74 cycles, every one 144 bytes, every one decoding all
-      four objects - power, energy and the meter identity. The values match what
-      the simulator reports sending (777 W, 12345 Wh, serial 44337811), which is
-      a stronger claim than "something decoded" and the one worth making.
-
-      It also carries the same energy register twice per cycle with different
-      scalers, so it exercises FR-AGG-04 on hardware for free - the first
-      occurrence is kept and the later one discarded, which until now was only
-      tested at host tier against a fixture.
-
+    what: MBUS-Simulator in workbench slot 3, driven over its console
+    available: true
+    notes: modes 1-4, plus fault / gap / silence / serial / identity / energy / scaler
+    notes2: |
+      The console is driven over the RFC2217 proxy on port 4003 at 115200, not through the workbench HTTP API, which can read serial but not write it. The proxy takes ONE client, so a per-test connection races its own teardown - testing/bench/conftest.py holds one for the session.
+      Its `status` line reports the state it is actually in. Check it rather than assuming: it has been found on `identity none`, which makes every discovery test fail for a reason that has nothing to do with the device.
+    limitation: |
+      Mode 2 is the signal to test through, and it is solid. Measured 2026-08-05 over ten minutes: 74 cycles, every one 144 bytes, every one decoding all four objects - power, energy and the meter identity. The values match what the simulator reports sending (777 W, 12345 Wh, serial 44337811), which is a stronger claim than "something decoded" and the one worth making.
+      It also carries the same energy register twice per cycle with different scalers, so it exercises FR-AGG-04 on hardware for free - the first occurrence is kept and the later one discarded, which until now was only tested at host tier against a fixture.
       Mode 3 is a different story and the rest of this note is about it.
-
       The signal is not fully stable and this is accepted, not a defect to chase.
-
-      Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives
-      either 409 byte-perfect from 0x00, or exactly 360 that are garbage from the
-      first byte - bimodal, four of nine clean. A burst lands whole or garbles;
-      it does not lose a prefix, and a garbled one also loses ~49 bytes.
-
-      Mode 1 cannot answer the polarity question, and an earlier note here saying
-      it had is withdrawn. The simulator does emit 0x55 (its own emit line reports
-      `pattern=0x55`, 218 bytes), but a pattern has no HDLC framing by
-      construction, and the firmware rotates its UART line settings after two
-      bursts with no framing. So the probe walks candidates during the test and
-      the board reports whichever setting it happened to be on - 0x55, 0x00 and
-      0xD5 in one run. The measurement moves under the measurer.
-
-      What does stand: the mode 3 telegram arrives with valid DLMS structure - a
-      readable date-time and OBIS codes in the first 32 bytes - so the line
-      settings are right for that mode and the truncation is not a polarity
-      error. TS-022 needs the probe pinned before it can mean anything.
-
-      Mode 3 behaves differently and worse: across 12 cycles the sizes were
-      317-389 of 409 and never once whole. So the e450 telegram has never been
-      delivered complete, and a `0 objects` result from a truncated burst is
-      correct behaviour rather than a decode defect. TS-020 asserts this and
-      currently fails - read it before reading any other meter result.
-
-      So a bench assertion on decoded output must span several cycles and require
-      one good one, never assert on a single cycle. A single-cycle test here is
-      flaky by construction, and will be blamed on the firmware.
-
+      Measured 2026-08-05 with the ramp (mode 4, 409 bytes). The board receives either 409 byte-perfect from 0x00, or exactly 360 that are garbage from the first byte - bimodal, four of nine clean. A burst lands whole or garbles; it does not lose a prefix, and a garbled one also loses ~49 bytes.
+      Mode 1 cannot answer the polarity question, and an earlier note here saying it had is withdrawn. The simulator does emit 0x55 (its own emit line reports `pattern=0x55`, 218 bytes), but a pattern has no HDLC framing by construction, and the firmware rotates its UART line settings after two bursts with no framing. So the probe walks candidates during the test and the board reports whichever setting it happened to be on - 0x55, 0x00 and 0xD5 in one run. The measurement moves under the measurer.
+      What does stand: the mode 3 telegram arrives with valid DLMS structure - a readable date-time and OBIS codes in the first 32 bytes - so the line settings are right for that mode and the truncation is not a polarity error. TS-022 needs the probe pinned before it can mean anything.
+      Mode 3 behaves differently and worse: across 12 cycles the sizes were 317-389 of 409 and never once whole. So the e450 telegram has never been delivered complete, and a `0 objects` result from a truncated burst is correct behaviour rather than a decode defect. TS-020 asserts this and currently fails - read it before reading any other meter result.
+      So a bench assertion on decoded output must span several cycles and require one good one, never assert on a single cycle. A single-cycle test here is flaky by construction, and will be blamed on the firmware.
   mqtt-broker:
-    what:      mosquitto on Workbench2, reachable from the bench access point
-    available: yes
-    notes:     mqtt://192.168.0.27:1883, anonymous - the same address the bench tests use
-    limitation: >
-      An earlier note here said to start a broker on BOTH benches because "the
-      board joins whichever radio is stronger and cannot say which". That advice
-      was wrong and it cost a day on 2026-08-05. The board CAN say which - it
-      logs the BSSID it associated with - and the real problem was that both
-      benches answered to the SSID `gplug-bench`, so the DUT joined the other one
-      (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all.
-      Three correct broker addresses were each blamed in turn.
-
-      The fix is one bench with a unique SSID, not two brokers. Check
-      `wifi:connected with <ssid> ... bssid = <mac>` against the bench radio
-      before ever suspecting an address.
-
-      Mosquitto does NOT survive an rfc2217-portal restart - it stops silently
-      and the address then refuses connections. POST /api/mqtt/start after any
-      service restart.
-
+    what: mosquitto on Workbench2, reachable from the bench access point
+    available: true
+    notes: mqtt://192.168.0.27:1883, anonymous - the same address the bench tests use
+    limitation: |
+      An earlier note here said to start a broker on BOTH benches because "the board joins whichever radio is stronger and cannot say which". That advice was wrong and it cost a day on 2026-08-05. The board CAN say which - it logs the BSSID it associated with - and the real problem was that both benches answered to the SSID `gplug-bench`, so the DUT joined the other one (d8:3a:dd:7c:b1:c2, channel 11, 10.42.0.x) which ran no broker at all. Three correct broker addresses were each blamed in turn.
+      The fix is one bench with a unique SSID, not two brokers. Check `wifi:connected with <ssid> ... bssid = <mac>` against the bench radio before ever suspecting an address.
+      Mosquitto does NOT survive an rfc2217-portal restart - it stops silently and the address then refuses connections. POST /api/mqtt/start after any service restart.
+    parameters:
+      scheme: mqtt
+      host: 192.168.0.27
+      port: 1883
+      anonymous: true
+      uri: mqtt://192.168.0.27:1883
   wifi-ap:
-    what:      The bench access point the board joins, MAC-derived so it cannot be confused with another bench
-    available: yes
-    notes: >
-      SSID `wb-037e71` (last 3 octets of the Workbench2 wlan0 MAC
-      dc:a6:32:03:7e:71), WPA2 `benchtest123`, channel 6, subnet 192.168.27.1/24
-      with DHCP .2-.20 - the third octet is the bench's own LAN host number, so
-      two benches can collide on neither SSID nor subnet.
-
-      192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP
-      default and belongs to a DUT running its own captive portal.
-
-      POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is
-      ignored and the AP comes up OPEN while still answering ok:true - the DUT
-      then refuses it under its authmode threshold.
-
+    what: The bench access point the board joins, MAC-derived so it cannot be confused with another bench
+    available: true
+    notes: |
+      SSID `wb-037e71` (last 3 octets of the Workbench2 wlan0 MAC dc:a6:32:03:7e:71), WPA2 `benchtest123`, channel 6, subnet 192.168.27.1/24 with DHCP .2-.20 - the third octet is the bench's own LAN host number, so two benches can collide on neither SSID nor subnet.
+      192.168.4.0/24 is deliberately NOT used: 192.168.4.1 is the ESP32 SoftAP default and belongs to a DUT running its own captive portal.
+      POST /api/wifi/ap_start takes `pass`, not `password`. An unknown key is ignored and the AP comes up OPEN while still answering ok:true - the DUT then refuses it under its authmode threshold.
+    parameters:
+      ssid: wb-037e71
+      bssid: dc:a6:32:03:7e:71
+      passphrase: benchtest123
+      channel: 6
+      subnet: 192.168.27.0/24
+      gateway: 192.168.27.1
   wifi-ap-outage:
-    what:      Stopping and restarting that access point on demand, to test recovery
-    available: yes
-    notes:     POST /api/wifi/ap_start | ap_stop, both confirmed working 2026-08-05
-    limitation: >
-      An earlier limitation here said gplug-bench was a NetworkManager connection
-      that ap_stop could not touch, so an outage test would observe nothing and
-      prove nothing. That no longer holds: the bench AP is hostapd started by the
-      workbench itself, and ap_stop/ap_start were exercised repeatedly during
-      provisioning on 2026-08-05.
-
+    what: Stopping and restarting that access point on demand, to test recovery
+    available: true
+    notes: POST /api/wifi/ap_start | ap_stop, both confirmed working 2026-08-05
+    limitation: |
+      An earlier limitation here said gplug-bench was a NetworkManager connection that ap_stop could not touch, so an outage test would observe nothing and prove nothing. That no longer holds: the bench AP is hostapd started by the workbench itself, and ap_stop/ap_start were exercised repeatedly during provisioning on 2026-08-05.
       These tests are therefore no longer blocked on equipment or on FR-PRV.
-
-  home-assistant:
-    what:      Home Assistant at 192.168.0.202:8123
-    available: yes
-
-  ha-bridge:
-    what:      The bench broker bridged to Home Assistant's broker, so published data reaches it
-    available: no
-    notes:     the board publishes to the bench broker at 192.168.0.27; HA is on the same LAN
-
+  # home-assistant and ha-bridge were capabilities here until 2026-08-06 and are
+  # now deliberately absent. FSD 22.0 puts the verification boundary at the
+  # broker: everything the device does is a message, and every message can be
+  # read with a subscription. Testing through Home Assistant would prove the
+  # device, the MQTT integration and the recipe registry at once, so a failure
+  # could not be attributed - and because discovery is retained, every bench run
+  # would leave real devices in a live instance until someone cleared each config
+  # topic by hand. What that does not prove is recorded as an accepted risk in
+  # FSD 4.1, not hidden.
   ota-relay:
-    what:      An update source the board can be pointed at from the bench
-    available: yes
-    notes: >
-      The workbench firmware store, found 2026-08-05 and needing nothing built.
-      POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file>
-      serves it as application/octet-stream, which is the URL the board downloads
-      from - reachable as http://192.168.27.1:8080/... from the bench network.
-
-      POST /api/ota is NOT this. It runs espota.py against a board speaking
-      ArduinoOTA, which is not the mechanism FR-OTA specifies.
-
+    what: An update source the board can be pointed at from the bench
+    available: true
+    notes: |
+      The workbench firmware store, found 2026-08-05 and needing nothing built. POST /api/firmware/upload puts an image on the Pi; GET /firmware/<project>/<file> serves it as application/octet-stream, which is the URL the board downloads from - reachable as http://192.168.27.1:8080/... from the bench network.
+      POST /api/ota is NOT this. It runs espota.py against a board speaking ArduinoOTA, which is not the mechanism FR-OTA specifies.
+    parameters:
+      scheme: http
+      host: 192.168.27.1
+      port: 8080
+      base_url: http://192.168.27.1:8080/firmware/
+      upload_endpoint: POST /api/firmware/upload
+    fixtures:
+      valid_image_url: null
+      image_that_cannot_reach_broker_url: null
+      self_signed_certificate_url: null
+      expired_certificate_url: null
+      status: fixture URLs are assigned when the corresponding images and TLS endpoints are prepared
+  physical-button:
+    what: The actual GPIO9 device button, operated manually on the bench
+    available: true
+    parameters:
+      method: manual
+      active_level: low
+      runtime_hold_ms: 5000
+      softap_timeout_s: 5
+    notes: The workbench cannot electrically drive this pin, but a person can operate the real button. This capability
+      proves the physical button path; the unavailable button-gpio capability remains documented for future automation.
   button-gpio:
-    what:      The board's button pin driven from a workbench output
-    available: no
-    notes: >
-      Settled 2026-08-05 by hardware reset rather than by inference. Pin 18 held
-      low across an EN pulse on pin 17 produced neither download mode nor a reset:
-      uptime ran straight through 1982 ms to 20592 ms. The Pi header reaches this
-      board at all - SLOT1 is a native USB JTAG device (303a:1001), so reset and
-      flash go over USB and the GPIO pins drive nothing.
-
-      An earlier note recorded "pin 18 low, no reaction", which could not tell a
-      dead wire from a firmware that has no button handler. Only a strapping-pin
-      test can, because the ROM samples GPIO9 with no firmware involved.
-
-      So these tests need a firmware test seam - a console command standing in for
-      the press - plus one physical press to prove the real pin path once.
-
+    what: Automated electrical actuation of the board's button pin from the workbench
+    available: false
+    notes: |
+      Settled 2026-08-05 by hardware reset rather than by inference. Pin 18 held low across an EN pulse on pin 17 produced neither download mode nor a reset: uptime ran straight through 1982 ms to 20592 ms. The Pi header reaches this board at all - SLOT1 is a native USB JTAG device (303a:1001), so reset and flash go over USB and the GPIO pins drive nothing.
+      An earlier note recorded "pin 18 low, no reaction", which could not tell a dead wire from a firmware that has no button handler. Only a strapping-pin test can, because the ROM samples GPIO9 with no firmware involved.
+      So these tests need a firmware test seam - a console command standing in for the press - plus one physical press to prove the real pin path once.
   power-cycle:
-    what:      Removing and restoring the board's supply, to produce an unclean power loss
-    available: no
-    notes: >
-      Found missing 2026-08-05 while writing TS-079, which asks for 100 of them.
-      A reset is not a power loss and cannot stand in for one: FR-NVS-03 is about
-      a write interrupted with the supply going away, and a JTAG or software
-      reset leaves the flash controller to finish. Substituting one would make
-      the test pass while proving nothing about the requirement.
-
-      The EN pin route is closed too - the Pi header reaches nothing on this
-      board (see button-gpio). This needs switched power on the slot.
-
+    what: One removal and restoration of the board's supply, operated by a person
+    available: true
+    parameters:
+      method: manual
+      prompt_endpoint: POST /api/human-interaction
+      reconnect_wait_s: 20
+    notes: |
+      The same arrangement as physical-button: the workbench cannot switch this slot's supply, but a person can unplug and replug the USB lead, and /api/human-interaction blocks the test until they confirm. That covers every case needing ONE power loss - WF-013 above all, which is an ordinary startup journey rather than a fault injection.
+      On SLOT1 the supply and the console are the same lead, so a power cycle drops the serial connection. The test must wait for the device to re-enumerate and reattach before reading the boot banner; a monitor call issued too early returns nothing and reads as a board that never booted.
+      Split out from power-cycle-endurance on 2026-08-06. Before that, one capability covered both a single operator-driven cycle and 100 automated ones, so WF-013 was recorded blocked by hardware nobody needs for it.
+  power-cycle-endurance:
+    what: Automated switched supply, for repeated unclean power loss under program control
+    available: false
+    notes: |
+      Found missing 2026-08-05 while writing TS-079, which asks for 100 cycles. Nobody operates a lead a hundred times, so the manual power-cycle capability cannot stand in - and neither can a reset: FR-NVS-03 is about a write interrupted with the supply going away, and a JTAG or software reset leaves the flash controller to finish. Substituting either would make the test pass while proving nothing about the requirement.
+      The EN pin route is closed too - the Pi header reaches nothing on this board (see button-gpio). This needs switched VBUS on the slot: a uhubctl-capable powered hub, or a relay in the slot's supply path.
+      The same part answers a second problem. The board currently draws from a Pi USB port whose rail collapses when the radio starts - measured 2026-08-06, 3-7 brownout resets a minute at 20 dBm, which is why the firmware ships at 15 dBm as a mitigation rather than a fix. A powered hub with per-port switching supplies a rail that holds AND gives this capability.
   second-board:
-    what:      A second gPlug-mini board, to prove entity identity follows the meter and not the device
-    available: no
-    notes:     slots 2 and 4 are empty; FR-ID-03 is the only test that needs one
-
+    what: A second gPlug-mini board, to prove entity identity follows the meter and not the device
+    available: false
+    notes: slots 2 and 4 are empty; FR-ID-03 is the only test that needs one
   real-meter:
-    what:      The installed Landis+Gyr E450, in the cabin
-    available: no
-
-# ─────────────────────────────────────────────────────────────────────────
-# Chapter 7 — Meter Interface
-# ─────────────────────────────────────────────────────────────────────────
-
-tests:
-
+    what: The installed Landis+Gyr E450, in the cabin
+    available: false
+    parameters:
+      model: Landis+Gyr E450
+      deployment_wifi_ssid: null
+      deployment_wifi_bssid: null
+      comparison_tolerance: decision:TDD-003
+actions:
+  confirm_bench_ready:
+    purpose: Verify the bench before drawing conclusions about the DUT.
+    needs:
+    - board
+    inputs:
+    - required_capabilities
+    confirms:
+    - every required capability is available
+    - the DUT is connected to the intended bench
+    - serial input has been drained
+    - the starting state is known
+  erase_nvs:
+    purpose: Remove stored configuration and confirm the next boot is factory-new.
+    needs:
+    - board
+    confirms:
+    - NVS erase completed
+    - stored WiFi and broker configuration is absent
+  reset_device:
+    purpose: Reset the DUT without claiming that power was removed.
+    needs:
+    - board
+    confirms:
+    - reset was issued
+    - reset reason was captured
+    - boot completion marker was observed
+  power_cycle_device:
+    purpose: Remove and restore DUT supply power.
+    needs:
+    - board
+    - power-cycle
+    inputs:
+    - operator_prompt
+    - reconnect_wait_s
+    observes:
+    - the operator's confirmation
+    - the serial port disappearing and re-enumerating
+    - the reset reason after the supply returns
+    confirms:
+    - supply was removed
+    - supply was restored
+    - the console was reattached before any output was read
+    - the following boot reason was captured
+  boot_device:
+    purpose: Boot the DUT and determine its externally observable starting state.
+    needs:
+    - board
+    inputs:
+    - timeout_s
+    observes:
+    - reset reason
+    - firmware version
+    - supervisor state
+    - serial completion marker
+  wait_for_supervisor_state:
+    purpose: Wait for a named supervisor state using positive evidence.
+    needs:
+    - board
+    inputs:
+    - expected_state
+    - timeout_s
+    confirms:
+    - the expected state was positively observed before timeout
+  wait_for_device_softap:
+    purpose: Observe and identify the DUT provisioning access point.
+    needs:
+    - board
+    inputs:
+    - timeout_s
+    observes:
+    - SSID
+    - BSSID
+    - security mode
+    - time until association is accepted
+  connect_to_device_softap:
+    purpose: Associate a client with the DUT SoftAP.
+    needs:
+    - board
+    inputs:
+    - passphrase
+    - expected_result
+    confirms:
+    - association outcome matches the expectation
+    - the joined BSSID belongs to the DUT
+  request_configuration_page:
+    purpose: Request the captive portal through the DUT SoftAP.
+    needs:
+    - board
+    inputs:
+    - hostname
+    confirms:
+    - DNS redirects to the DUT
+    - the configuration page is returned
+  submit_configuration:
+    purpose: Submit WiFi, MQTT and optional DLMS configuration through the portal.
+    needs:
+    - board
+    inputs:
+    - wifi_ssid
+    - wifi_passphrase
+    - broker_host
+    - broker_port
+    - mqtt_username
+    - mqtt_password
+    - dlms_key
+    confirms:
+    - the portal accepts or rejects the input as specified
+    - accepted values are persisted before Provisioning ends
+  start_access_point:
+    purpose: Start the intended workbench access point and verify its identity.
+    needs:
+    - wifi-ap
+    confirms:
+    - SSID matches the capability definition
+    - BSSID matches the capability definition
+    - WPA2 is enabled
+    - DHCP and routing are available
+  stop_access_point:
+    purpose: Remove the workbench access point for a controlled outage.
+    needs:
+    - wifi-ap
+    - wifi-ap-outage
+    confirms:
+    - the intended BSSID is no longer available
+  wait_for_wifi_association:
+    purpose: Confirm association with the intended access point, not merely an SSID match.
+    needs:
+    - board
+    - wifi-ap
+    inputs:
+    - expected_ssid
+    - expected_bssid
+    - timeout_s
+    observes:
+    - associated SSID
+    - associated BSSID
+    - assigned IP address
+    - association timestamp
+    confirms:
+    - SSID matches
+    - BSSID matches
+    - an IP address is assigned
+  start_broker:
+    purpose: Start the bench MQTT broker and prove it accepts traffic.
+    needs:
+    - mqtt-broker
+    confirms:
+    - publish/subscribe self-test succeeds
+  stop_broker:
+    purpose: Make the bench MQTT broker unavailable.
+    needs:
+    - mqtt-broker
+    inputs:
+    - failure_mode
+    confirms:
+    - the requested DROP, REJECT or stopped-service condition exists
+  wait_for_mqtt_session:
+    purpose: Observe a live MQTT session established by the DUT.
+    needs:
+    - board
+    - mqtt-broker
+    inputs:
+    - timeout_s
+    observes:
+    - client identifier
+    - connection timestamp
+    - birth or status message
+  feed_meter_cycles:
+    purpose: Drive one or more controlled meter transmission cycles.
+    needs:
+    - board
+    - mbus-sim
+    inputs:
+    - mode
+    - cycles
+    - identity
+    - energy
+    - scaler
+    - fault
+    - gap_ms
+    confirms:
+    - the simulator state matches the requested inputs
+    - the requested number of cycles was emitted
+  observe_fresh_publication:
+    purpose: Prove that a new measurement was published after the stimulus.
+    needs:
+    - board
+    - mqtt-broker
+    inputs:
+    - topic
+    - minimum_messages
+    - timeout_s
+    confirms:
+    - at least one message is newer than the observation start
+    - retained pre-stimulus data is not accepted as recovery evidence
+  read_discovery_messages:
+    purpose: Read and validate retained Home Assistant discovery messages.
+    needs:
+    - mqtt-broker
+    inputs:
+    - discovery_prefix
+    observes:
+    - topics
+    - payloads
+    - retain flags
+    - unique IDs
+    - device classes
+    - state classes
+  observe_discovery_contract:
+    purpose: Check the discovery payloads carry what a consumer needs, at the broker.
+    needs:
+    - mqtt-broker
+    inputs:
+    - expected_entities
+    - timeout_s
+    observes:
+    - one retained config topic per expected entity
+    - device_class and state_class per entity
+    - unit_of_measurement
+    - unique_id
+    - the device block, including sw_version
+    - state_topic, and whether it resolves to a topic being published
+    confirms:
+    - every expected entity has a retained configuration
+    - no configuration exists for an entity absent from the cycle
+  publish_ota_command:
+    purpose: Publish an OTA URL to the DUT command topic.
+    needs:
+    - board
+    - mqtt-broker
+    - ota-relay
+    inputs:
+    - image_url
+    confirms:
+    - the command was published
+    - the DUT acknowledged or began processing within the specified window
+  inspect_ota_state:
+    purpose: Observe OTA slot, running image, validation state and reset reason.
+    needs:
+    - board
+    observes:
+    - running firmware version
+    - active slot
+    - pending validation state
+    - rollback state
+    - reset reason
+  compare_with_real_meter:
+    purpose: Compare published measurements with the installed meter display.
+    needs:
+    - board
+    - real-meter
+    inputs:
+    - tolerance
+    observes:
+    - meter display values
+    - decoded values
+    - published values
+    - meter identity
+  observe_for_duration:
+    purpose: Observe continuous operation for a defined period.
+    needs:
+    - board
+    inputs:
+    - duration_s
+    - required_observations
+    - prohibited_observations
+    confirms:
+    - the complete observation window elapsed
+    - positive completion evidence was recorded
+  restore_bench:
+    purpose: Return every modified bench element to its declared baseline.
+    needs:
+    - board
+    confirms:
+    - simulator fault is none
+    - simulator mode and identity are restored
+    - access point is available when required
+    - broker is available when required
+    - DUT recovery is confirmed
+  flash_firmware_variant:
+    purpose: Flash a named production or simulated firmware variant and identify exactly what is running.
+    needs:
+    - board
+    inputs:
+    - variant
+    - firmware_artifact
+    - expected_version
+    observes:
+    - flashed artifact identity
+    - reported firmware version
+    - build variant marker
+    - boot completion
+    confirms:
+    - the requested artifact was flashed
+    - the running version and variant match the requested artifact
+  observe_no_publication:
+    purpose: Prove that no prohibited MQTT publication occurs during a complete observation window.
+    needs:
+    - mqtt-broker
+    inputs:
+    - topics
+    - duration_s
+    - allow_retained_initial_message
+    confirms:
+    - subscription began before the observation window
+    - the complete window elapsed
+    - no prohibited fresh message arrived
+  silence_meter:
+    purpose: Stop simulator meter traffic for a defined period and positively confirm silence.
+    needs:
+    - mbus-sim
+    inputs:
+    - duration_s
+    confirms:
+    - the simulator entered silence mode
+    - no simulator telegram was emitted during the complete interval
+  hold_device_button:
+    purpose: Hold the physical device button for a specified duration.
+    needs:
+    - board
+    - physical-button
+    inputs:
+    - duration_ms
+    - method
+    observes:
+    - physical input state
+    - supervisor transition
+    - SoftAP appearance
+    confirms:
+    - the actual physical button was operated
+    - the hold duration was achieved
+    - the resulting supervisor behaviour was observed
+  stall_watchdog_task:
+    purpose: Stall a watchdog-subscribed task through the defined test seam.
+    needs:
+    - board
+    inputs:
+    - task
+    - stall_duration_s
+    observes:
+    - stall start marker
+    - watchdog reset reason
+    - time to reset
+test_cases:
 - id: TS-001
-  verifies: [FR-MTR-05]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Decodes a reference capture whose meter serial is 16 characters
-  expected:  Serial read whole, at the length the fixture carries
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-05
+  tier: host
+  needs: []
+  does: Decodes a reference capture whose meter serial is 16 characters
+  expected: Serial read whole, at the length the fixture carries
   procedure: ctest -R TS-001
-  status:    successful
-  reason:
-  commit:    8490f3e
-  when:      2026-08-05T08:58Z
-
+  status: successful
+  reason: null
+  commit: 8490f3e
+  when: 2026-08-05T08:58Z
 - id: TS-002
-  verifies: [FR-MTR-05]
-  kind:     deviation
-  tier:     host
-  needs:    []
-  does:      Decodes a reference capture whose meter serial is 8 characters
-  expected:  Serial read whole, without a rebuild between the two forms
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-05
+  tier: host
+  needs: []
+  does: Decodes a reference capture whose meter serial is 8 characters
+  expected: Serial read whole, without a rebuild between the two forms
   procedure: ctest -R TS-002
-  status:    successful
-  reason:
-  commit:    8490f3e
-  when:      2026-08-05T08:58Z
-
+  status: successful
+  reason: null
+  commit: 8490f3e
+  when: 2026-08-05T08:58Z
 - id: TS-007
-  verifies: [FR-MTR-09, FR-DEC-04, FR-HA-05]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Maps every register of a published capture to its label and unit
-  expected:  Right label, unit and scale for each; no value on a wrong label
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-09
+  - FR-DEC-04
+  - FR-HA-05
+  tier: host
+  needs: []
+  does: Maps every register of a published capture to its label and unit
+  expected: Right label, unit and scale for each; no value on a wrong label
   procedure: ctest -R TS-007
-  status:    successful
-  reason:
-  commit:    8490f3e
-  when:      2026-08-05T08:58Z
-
+  status: successful
+  reason: null
+  commit: 8490f3e
+  when: 2026-08-05T08:58Z
 - id: TS-009
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     host
-  needs:    []
-  does:      Feeds a capture starting 17 bytes in, inside the first frame
-  expected:  The remaining frames still decode — alignment recovered
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: host
+  needs: []
+  does: Feeds a capture starting 17 bytes in, inside the first frame
+  expected: The remaining frames still decode — alignment recovered
   procedure: ctest -R TS-009
-  status:    successful
-  reason:
-  commit:    8490f3e
-  when:      2026-08-05T12:41Z
-
+  status: successful
+  reason: null
+  commit: 8490f3e
+  when: 2026-08-05T12:41Z
 - id: TS-010
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     host
-  needs:    []
-  does:      Starts 200 bytes in, losing the opening frames entirely
-  expected:  The remaining frames still decode — alignment recovered
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: host
+  needs: []
+  does: Starts 200 bytes in, losing the opening frames entirely
+  expected: The remaining frames still decode — alignment recovered
   procedure: ctest -R TS-010
-  status:    successful
-  reason:
-  commit:    8490f3e
-  when:      2026-08-05T12:41Z
-
+  status: successful
+  reason: null
+  commit: 8490f3e
+  when: 2026-08-05T12:41Z
 - id: TS-107
-  verifies: [FR-AGG-02, FR-MTR-10]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Parses a capture repeatedly from where the previous pass stopped, until it yields nothing
-  expected:  The loop terminates, and the identity is among the values - one pass alone leaves it unread
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-AGG-02
+  - FR-MTR-10
+  tier: host
+  needs: []
+  does: Parses a capture repeatedly from where the previous pass stopped, until it yields nothing
+  expected: The loop terminates, and the identity is among the values - one pass alone leaves it unread
   procedure: ctest -R TS-107
-  status:    successful
-  reason:
-  commit:    2d27604
-  when:      2026-08-05T21:40Z
-
+  status: successful
+  reason: null
+  commit: 2d27604
+  when: 2026-08-05T21:40Z
 - id: TS-011
-  verifies: [FR-MTR-07]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      Feeds a capture with one corrupted checksum byte
-  expected:  That frame contributes nothing to the set
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-07
+  tier: host
+  needs: []
+  does: Feeds a capture with one corrupted checksum byte
+  expected: That frame contributes nothing to the set
   procedure: ctest -R TS-011
-  status:    successful
-  reason:
-  commit:    912949f
-  when:      2026-08-05T14:35Z
+  status: successful
+  reason: null
+  commit: 912949f
+  when: 2026-08-05T14:35Z
 - id: TS-012
-  verifies: [FR-MTR-08]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      The same corrupted capture, observed at the decoder's input rather than its output
-  expected:  The decoder is never handed any byte of the bad frame
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-08
+  tier: host
+  needs: []
+  does: The same corrupted capture, observed at the decoder's input rather than its output
+  expected: The decoder is never handed any byte of the bad frame
   procedure: ctest -R TS-012
-  status:    not done
-  reason:    test not written; needs a firmware seam to observe decoder input
-  commit:
-  when:
-
+  status: not done
+  reason: test not written; needs a firmware seam to observe decoder input
+  commit: null
+  when: null
 - id: TS-013
-  verifies: [FR-MTR-10]
-  kind:     deviation
-  tier:     host
-  needs:    []
-  does:      Decodes three captures — identity as logical device name, as device ID 1, and absent
-  expected:  Identity found in the first two; with neither, discovery defers rather than inventing one
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-10
+  tier: host
+  needs: []
+  does: Decodes three captures — identity as logical device name, as device ID 1, and absent
+  expected: Identity found in the first two; with neither, discovery defers rather than inventing one
   procedure: ctest -R TS-013
-  status:    successful
-  reason:
-  commit:    912949f
-  when:      2026-08-05T14:35Z
-# A device that wakes mid-burst can land on a flag byte - one position in about
-# 150, so not rare. Measured 2026-08-05: prepending a single 0x7E to a working
-# capture takes it from 10 decoded values to 0. The parser does not skip a
-# leading flag, so the firmware must, and nothing currently does.
+  status: successful
+  reason: null
+  commit: 912949f
+  when: 2026-08-05T14:35Z
 - id: TS-023
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     host
-  needs:    []
-  does:      Prepends one, two and three 0x7E bytes to a complete capture
-  expected:  Full decode in every case - a leading flag is skipped, not fatal
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: host
+  needs: []
+  does: Prepends one, two and three 0x7E bytes to a complete capture
+  expected: Full decode in every case - a leading flag is skipped, not fatal
   procedure: ctest -R TS-023
-  status:    successful
-  reason:
-  commit:    1f24a7b
-  when:      2026-08-05T16:10Z
-
+  status: successful
+  reason: null
+  commit: 1f24a7b
+  when: 2026-08-05T16:10Z
 - id: TS-024
-  verifies: [FR-MTR-06]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Opens a capture 40 bytes before a frame boundary, so the next frame is past a `7E 7E`
-  expected:  The frames after the boundary decode
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-06
+  tier: host
+  needs: []
+  does: Opens a capture 40 bytes before a frame boundary, so the next frame is past a `7E 7E`
+  expected: The frames after the boundary decode
   procedure: ctest -R TS-024
-  status:    successful
-  reason:
-  commit:    1f24a7b
-  when:      2026-08-05T16:10Z
-
+  status: successful
+  reason: null
+  commit: 1f24a7b
+  when: 2026-08-05T16:10Z
 - id: TS-014
-  verifies: [FR-MTR-01, FR-MTR-02, FR-MTR-03]
-  kind:     standard
-  tier:     target
-  needs:    [board]
-  does:      Boots the board and reads the UART and pad configuration registers back
-  expected:  The chip reports 2400 8E1, receive inversion on, both internal pulls off
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-01
+  - FR-MTR-02
+  - FR-MTR-03
+  tier: target
+  needs:
+  - board
+  does: Boots the board and reads the UART and pad configuration registers back
+  expected: The chip reports 2400 8E1, receive inversion on, both internal pulls off
   procedure: P-TARGET
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
-# The configuration registers say what the chip was told. Only a transmitter can
-# say whether the wire carries it. Same requirements, second tier - and the
-# simulator's mode 1 exists for exactly this rung of the ladder.
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-022
-  verifies: [FR-MTR-01, FR-MTR-02]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator in `mode 1` drives a continuous 0x55 pattern down the line
-  expected:  Every received byte is 0x55 - a polarity mismatch yields a uniform 0xD5 instead
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-01
+  - FR-MTR-02
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator in `mode 1` drives a continuous 0x55 pattern down the line
+  expected: Every received byte is 0x55 - a polarity mismatch yields a uniform 0xD5 instead
   procedure: P-METER
-  status:    not done
-  reason:    written and running; needs a firmware seam to pin the UART line setting, which the probe otherwise rotates mid-test
-  commit:
-  when:
-
+  status: not done
+  reason: written and running; needs a firmware seam to pin the UART line setting, which the probe otherwise rotates
+    mid-test
+  commit: null
+  when: null
 - id: TS-015
-  verifies: [FR-MTR-04]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim, button-gpio, ota-relay]
-  does:      Watches the meter line for 10 minutes across every state, including Provisioning and OTA
-  expected:  No transmitted edge at any point, including during boot
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-04
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - physical-button
+  - ota-relay
+  does: Watches the meter line for 10 minutes across every state, including Provisioning and OTA
+  expected: No transmitted edge at any point, including during boot
   procedure: P-OTA
-  status:    not done
-  reason:
-  commit:
-  when:
-
+  status: not done
+  reason: null
+  commit: null
+  when: null
 - id: TS-016
-  verifies: [FR-MTR-05]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Switches the simulator between `serial 8` and `serial 16` on the wire, with the bench lead-in in place
-  expected:  Both decode with no reflash between them - 6 objects per cycle either way
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-05
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Switches the simulator between `serial 8` and `serial 16` on the wire, with the bench lead-in in place
+  expected: Both decode with no reflash between them - 6 objects per cycle either way
   procedure: P-METER
-  status:    successful
-  reason:    Both serial lengths decoded 6 objects each, no reflash between them
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: Both serial lengths decoded 6 objects each, no reflash between them
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-017
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator told `fault start-mid-frame` - one transmission begins partway through, bench lead-in in place
-  expected:  A later cycle decodes; the disturbed one costs only itself
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator told `fault start-mid-frame` - one transmission begins partway through, bench lead-in in place
+  expected: A later cycle decodes; the disturbed one costs only itself
   procedure: P-METER
-  status:    successful
-  reason:    Best cycle decoded 6 objects over 8 cycles after a mid-frame start
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: Best cycle decoded 6 objects over 8 cycles after a mid-frame start
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-018
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Resets the board mid-transmission - the case that happens on every real power-up, bench lead-in in place
-  expected:  The first complete cycle after boot decodes; no second power cycle needed
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Resets the board mid-transmission - the case that happens on every real power-up, bench lead-in in place
+  expected: The first complete cycle after boot decodes; no second power cycle needed
   procedure: P-METER
-  status:    successful
-  reason:    Best cycle decoded 6 objects over 8 cycles after a reset mid-transmission
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: Best cycle decoded 6 objects over 8 cycles after a reset mid-transmission
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-019
-  verifies: [FR-MTR-07, FR-MTR-08]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
-  expected:  Frame 2 discarded and counted; frames 1, 3 and 4 still decode
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-07
+  - FR-MTR-08
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator told `fault fcs 2` — frame 2 of 4 carries a bad checksum
+  expected: Frame 2 discarded and counted; frames 1, 3 and 4 still decode
   procedure: P-METER
-  status:    successful
-  reason:    No publish during the corrupted cycle
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: No publish during the corrupted cycle
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-020
-  verifies: [NFR-MTR-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Emits the longest telegram the reference captures contain, in one burst
-  expected:  Every byte received; the device's count matches the simulator's
+  kind: atomic
+  scenario: standard
+  verifies:
+  - NFR-MTR-01
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Emits the longest telegram the reference captures contain, in one burst
+  expected: Every byte received; the device's count matches the simulator's
   procedure: P-METER
-  status:    not done
-  reason: >
-    The simulator drops bytes and is not a meter, so this bench cannot show that
-    every byte arrives - superseded by TS-103 at field tier. What runs here under
-    this name is a link-health precondition (best cycle within 10% of what was
-    sent), which says the rig is working as well as it ever does. It is not a
-    verification of NFR-MTR-01 and must not be read as one.
-  commit:
-  when:
-
-# NFR-MTR-01 cannot be shown on this bench. The simulator drops bytes and is not
-# a meter; a tolerance check says the link is healthy, never that every byte
-# arrived. Only the installed meter can answer it, so the claim lives at field
-# tier rather than being quietly satisfied by a relaxed bench assertion.
+  status: not done
+  reason: |
+    The simulator drops bytes and is not a meter, so this bench cannot show that every byte arrives - superseded by TS-103 at field tier. What runs here under this name is a link-health precondition (best cycle within 10% of what was sent), which says the rig is working as well as it ever does. It is not a verification of NFR-MTR-01 and must not be read as one.
+  commit: null
+  when: null
 - id: TS-103
-  verifies: [NFR-MTR-01]
-  kind:     standard
-  tier:     field
-  needs:    [real-meter]
-  does:      Counts bytes received per transmission against the meter's own telegram length
-  expected:  Every byte received, with no loss across a run of transmissions
+  kind: atomic
+  scenario: standard
+  verifies:
+  - NFR-MTR-01
+  tier: field
+  needs:
+  - real-meter
+  does: Counts bytes received per transmission against the meter's own telegram length
+  expected: Every byte received, with no loss across a run of transmissions
   procedure: P-FIELD
-  status:    not done
-  reason:    needs real-meter - unavailable
-  commit:
-  when:
-
+  status: not done
+  reason: needs real-meter - unavailable
+  commit: null
+  when: null
 - id: TS-021
-  verifies: [FR-MTR-09, FR-MTR-10]
-  kind:     standard
-  tier:     field
-  needs:    [real-meter]
-  does:      Reads the installed meter and compares against the meter's own display
-  expected:  Values and identity match what the meter shows
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-09
+  - FR-MTR-10
+  tier: field
+  needs:
+  - real-meter
+  does: Reads the installed meter and compares against the meter's own display
+  expected: Values and identity match what the meter shows
   procedure: P-FIELD
-  status:    not done
-  reason:
-  commit:
-  when:
-
+  status: not done
+  reason: null
+  commit: null
+  when: null
 - id: TS-026
-  verifies: [FR-AGG-03]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Builds one set from a cycle and reads the message it produces
-  expected:  One message per cycle, complete and stable when read twice
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-AGG-03
+  tier: host
+  needs: []
+  does: Builds one set from a cycle and reads the message it produces
+  expected: One message per cycle, complete and stable when read twice
   procedure: ctest -R TS-026
-  status:    successful
-  reason:
-  commit:    9f359b1
-  when:      2026-08-05T17:20Z
-
+  status: successful
+  reason: null
+  commit: 9f359b1
+  when: 2026-08-05T17:20Z
 - id: TS-027
-  verifies: [FR-AGG-04]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      Adds the same register twice with differing values, then a different register
-  expected:  The first value is published, the later one appears nowhere
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-AGG-04
+  tier: host
+  needs: []
+  does: Adds the same register twice with differing values, then a different register
+  expected: The first value is published, the later one appears nowhere
   procedure: ctest -R TS-027
-  status:    successful
-  reason:
-  commit:    9f359b1
-  when:      2026-08-05T17:20Z
-
+  status: successful
+  reason: null
+  commit: 9f359b1
+  when: 2026-08-05T17:20Z
 - id: TS-028
-  verifies: [FR-AGG-05]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Broker stopped; feed a complete cycle
-  expected:  Set discarded, no queue growth
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-AGG-05
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Broker stopped; feed a complete cycle
+  expected: Set discarded, no queue growth
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-029
-  verifies: [FR-AGG-06]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      Reads the message from a set that decoded nothing, then from one holding a real zero
-  expected:  No message at all for the empty set; the genuine zero is published
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-AGG-06
+  tier: host
+  needs: []
+  does: Reads the message from a set that decoded nothing, then from one holding a real zero
+  expected: No message at all for the empty set; the genuine zero is published
   procedure: ctest -R TS-029
-  status:    successful
-  reason:
-  commit:    9f359b1
-  when:      2026-08-05T17:20Z
-
-# ─────────────────────────────────────────────────────────────────────────
-# Bread-and-butter — the device does its job
-#
-# One journey, five checkpoints, each asserted separately because they fail for
-# different reasons and the difference says where to look. These run before
-# every deviation and exception case: a device that is not delivering
-# measurements cannot tell you anything useful about how it handles a corrupted
-# frame.
-#
-# Steps 1-3 are discharged by the provisioning tests (TS-053..061, TS-031,
-# TS-039). Steps 4 and 5 are these.
-#
-# They exist because twelve requirements about the working path were proven only
-# at host tier, against a fixture, and had never been shown to hold on hardware.
-# ─────────────────────────────────────────────────────────────────────────
-
+  status: successful
+  reason: null
+  commit: 9f359b1
+  when: 2026-08-05T17:20Z
 - id: TS-108
-  verifies: [FR-MTR-09]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several cycles
-  expected:  At least one cycle decodes, and each value carries the label and unit its register maps to
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-09
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator in the simple mode - one short frame carrying power and energy every 5 s - watched over several
+    cycles
+  expected: At least one cycle decodes, and each value carries the label and unit its register maps to
   procedure: P-METER
-  status:    successful
-  reason:    "passed 2026-08-05 - 144-byte cycles, 4-5 objects decoded each, labels and units correct"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - 144-byte cycles, 4-5 objects decoded each, labels and units correct
+  commit: e1ce921
+  when: null
 - id: TS-109
-  verifies: [FR-MTR-10]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      The same signal, with the simulator emitting an identity; watched for the meter serial
-  expected:  The serial is read and reported - discovery is gated on it and publishes nothing without it
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-10
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: The same signal, with the simulator emitting an identity; watched for the meter serial
+  expected: The serial is read and reported - discovery is gated on it and publishes nothing without it
   procedure: P-METER
-  status:    successful
-  reason:    "passed 2026-08-05 - meter serial 44337811 read from the identity frame"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - meter serial 44337811 read from the identity frame
+  commit: e1ce921
+  when: null
 - id: TS-110
-  verifies: [FR-AGG-03, FR-AGG-06]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
-  does:      Subscribes to the state topic at the broker and waits for live messages
-  expected:  At least two arrive; each is one complete non-empty JSON object, one per cycle
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-AGG-03
+  - FR-AGG-06
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  - wifi-ap
+  does: Subscribes to the state topic at the broker and waits for live messages
+  expected: At least two arrive; each is one complete non-empty JSON object, one per cycle
   procedure: P-NETWORK
-  status:    successful
-  reason:    "passed 2026-08-05 - 5 live state messages at the broker, power 777 W and energy 12345 exactly as sent"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - 5 live state messages at the broker, power 777 W and energy 12345 exactly as sent
+  commit: e1ce921
+  when: null
 - id: TS-111
-  verifies: [FR-HA-02, FR-HA-04]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
-  does:      Reads the retained discovery configs from the broker
-  expected:  At least one config is retained and carries a unique_id keyed on the meter serial
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-HA-02
+  - FR-HA-04
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  - wifi-ap
+  does: Reads the retained discovery configs from the broker
+  expected: At least one config is retained and carries a unique_id keyed on the meter serial
   procedure: P-NETWORK
-  status:    successful
-  reason:    "passed 2026-08-05 - retained configs, unique_id keyed on the meter serial (44337811_*)"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - retained configs, unique_id keyed on the meter serial (44337811_*)
+  commit: e1ce921
+  when: null
 - id: TS-030
-  verifies: [FR-SUP-01]
-  kind:     standard
-  tier:     target
-  needs:    [board, wifi-ap]
-  does:      Erase NVS, boot
-  expected:  SoftAP appears within 10 s
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-SUP-01
+  tier: target
+  needs:
+  - board
+  - wifi-ap
+  does: Erase NVS, boot
+  expected: SoftAP appears within 10 s
   procedure: P-TARGET
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-031
-  verifies: [FR-SUP-02]
-  kind:     standard
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Credentials stored, boot
-  expected:  Association attempt to the stored SSID
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-SUP-02
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Credentials stored, boot
+  expected: Association attempt to the stored SSID
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-032
-  verifies: [FR-SUP-03]
-  kind:     negative
-  tier:     bench
-  needs:    [board, wifi-ap, wifi-ap-outage]
-  does:      Remove the access point for 10 min with credentials stored
-  expected:  Connection attempts continue throughout, at the capped backoff
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-SUP-03
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - wifi-ap-outage
+  does: Remove the access point for 10 min with credentials stored
+  expected: Connection attempts continue throughout, at the capped backoff
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-033
-  verifies: [FR-SUP-04]
-  kind:     negative
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      "`OPERATIONAL`; power off the access point for 10 min"
-  expected:  Device retries throughout
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-SUP-04
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: '`OPERATIONAL`; power off the access point for 10 min'
+  expected: Device retries throughout
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-034
-  verifies: [FR-SUP-05]
-  kind:     negative
-  tier:     bench
-  needs:    [board, wifi-ap, wifi-ap-outage]
-  does:      Deny association repeatedly; log attempt times
-  expected:  Intervals increase, then hold at 30 s ±2 s
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-SUP-05
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - wifi-ap-outage
+  does: Deny association repeatedly; log attempt times
+  expected: Intervals increase, then hold at 30 s ±2 s
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-035
-  verifies: [FR-SUP-06]
-  kind:     standard
-  tier:     bench
-  needs:    [board, button-gpio, wifi-ap]
-  does:      "`OPERATIONAL`; hold the button 5 s"
-  expected:  SoftAP appears within 5 s
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-SUP-06
+  tier: bench
+  needs:
+  - board
+  - physical-button
+  - wifi-ap
+  does: '`OPERATIONAL`; hold the button 5 s'
+  expected: SoftAP appears within 5 s
   procedure: P-NETWORK
-  status:    not done
-  reason:    needs button-gpio — unavailable
-  commit:
-  when:
-
+  status: not done
+  reason: not yet run with the physical button
+  commit: null
+  when: null
 - id: TS-036
-  verifies: [FR-SUP-07]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Enter Provisioning with credentials stored; wait 300 s
-  expected:  Returns to `CONNECTING`
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-SUP-07
+  tier: bench
+  needs:
+  - board
+  does: Enter Provisioning with credentials stored; wait 300 s
+  expected: Returns to `CONNECTING`
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-037
-  verifies: [FR-SUP-08]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Broker stopped; feed a cycle
-  expected:  Decode occurs and is logged
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-SUP-08
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Broker stopped; feed a cycle
+  expected: Decode occurs and is logged
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-038
-  verifies: [FR-SUP-09]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Boot with each of SSID, passphrase and broker host absent in turn
-  expected:  Provisioning entered in each of the three cases
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-SUP-09
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Boot with each of SSID, passphrase and broker host absent in turn
+  expected: Provisioning entered in each of the three cases
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-039
-  verifies: [FR-SUP-10]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mqtt-broker, wifi-ap]
-  does:      Provision with MQTT username and password both left blank
-  expected:  A broker session is established
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-SUP-10
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - wifi-ap
+  does: Provision with MQTT username and password both left blank
+  expected: A broker session is established
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-040
-  verifies: [NFR-SUP-01]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Stop the broker for 2 min, then restart it
-  expected:  A session is re-established within 60 s of the broker accepting connections
+  kind: atomic
+  scenario: negative
+  verifies:
+  - NFR-SUP-01
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Stop the broker for 2 min, then restart it
+  expected: A session is re-established within 60 s of the broker accepting connections
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-041
-  verifies: [FR-MTR-11]
-  kind:     standard
-  tier:     target
-  needs:    [board, mbus-sim]
-  does:      Boot with a DLMS key stored, then with the slot empty
-  expected:  Both boot and decode an unencrypted telegram
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-MTR-11
+  tier: target
+  needs:
+  - board
+  - mbus-sim
+  does: Boot with a DLMS key stored, then with the slot empty
+  expected: Both boot and decode an unencrypted telegram
   procedure: P-TARGET
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
-# TS-025 was a debugging aid, not a test case, and is withdrawn.
-#
-# It swept the simulator's preamble - 0, 6, 12 and 24 bytes - and recorded what
-# the board received. That answers "what does this rig do", never "what must the
-# device do", so it discharged no requirement, and counting it inflated the plan
-# by one entry that could not fail in any way that mattered.
-#
-# The measurement it produced is real and is kept where it belongs: on the
-# `mbus-sim` capability, as a property of the rig. FR-MTR-06 is discharged by
-# TS-009, TS-010, TS-017, TS-018 and TS-023, which state what the device owes.
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-025
-  verifies: [FR-MTR-06]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      WITHDRAWN - a rig characterisation, not a requirement check
-  expected:  n/a
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-06
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: WITHDRAWN - a rig characterisation, not a requirement check
+  expected: n/a
   procedure: n/a
-  status:    superseded
-  reason:    a debugging aid; the measurement lives on the mbus-sim capability
-  commit:
-  when:
-
+  status: retired
+  reason: a debugging aid; the measurement lives on the mbus-sim capability
+  commit: null
+  when: null
 - id: TS-042
-  verifies: [FR-MTR-12]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mbus-sim, mqtt-broker, wifi-ap]
-  does:      Simulator `silence 60`
-  expected:  WiFi and the broker session hold; no measurement is published
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-MTR-12
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  - wifi-ap
+  does: Simulator `silence 60`
+  expected: WiFi and the broker session hold; no measurement is published
   procedure: P-METER
-  status:    successful
-  reason:    Nothing published while the line was silent
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: Nothing published while the line was silent
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-043
-  verifies: [FR-MTR-13]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator `fault fcs 2`; read the counter on the console
-  expected:  The count rises by exactly one per corrupted frame
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-13
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator `fault fcs 2`; read the counter on the console
+  expected: The count rises by exactly one per corrupted frame
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-044
-  verifies: [FR-MTR-14]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Simulator `fault noise 200`, then silence
-  expected:  A condition distinct from a decode failure is logged
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-MTR-14
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Simulator `fault noise 200`, then silence
+  expected: A condition distinct from a decode failure is logged
   procedure: P-METER
-  status:    successful
-  reason:    Noise reported on 2 lines, distinct from silence
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: Noise reported on 2 lines, distinct from silence
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-045
-  verifies: [FR-HA-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim, mqtt-broker]
-  does:      Fresh broker; connect the DUT; feed one cycle
-  expected:  One retained config per Appendix B entity present in the cycle
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-HA-01
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  does: Fresh broker; connect the DUT; feed one cycle
+  expected: One retained config per Appendix B entity present in the cycle
   procedure: P-METER
-  status:    not done
-  reason:    "unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication is unproven"
-  commit:
-  when:
-
+  status: not done
+  reason: unrun - discovery configs exist, but never against a freshly cleared broker, so first-connect publication
+    is unproven
+  commit: null
+  when: null
 - id: TS-047
-  verifies: [FR-HA-03]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Connect with no meter data
-  expected:  No discovery topics
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-HA-03
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Connect with no meter data
+  expected: No discovery topics
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-049
-  verifies: [FR-HA-06]
-  kind:     negative
-  tier:     bench
-  needs:    [board]
-  does:      Cut DUT power while connected
-  expected:  Broker marks it unavailable within the keepalive window
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-HA-06
+  tier: bench
+  needs:
+  - board
+  does: Cut DUT power while connected
+  expected: Broker marks it unavailable within the keepalive window
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-050
-  verifies: [FR-HA-07]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Subscribe fresh after the DUT is offline
-  expected:  No measurement state delivered
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-HA-07
+  tier: bench
+  needs:
+  - board
+  does: Subscribe fresh after the DUT is offline
+  expected: No measurement state delivered
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-051
-  verifies: [FR-HA-08]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Read the client identifier the broker sees
-  expected:  It contains the device MAC
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-HA-08
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Read the client identifier the broker sees
+  expected: It contains the device MAC
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-052
-  verifies: [NFR-HA-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim, mqtt-broker]
-  does:      Timestamp cycle boundary and broker receipt
-  expected:  Delta ≤ 2 s
+  kind: atomic
+  scenario: standard
+  verifies:
+  - NFR-HA-01
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  does: Timestamp cycle boundary and broker receipt
+  expected: Delta ≤ 2 s
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-104
-  verifies: [FR-PRV-02, FR-SEC-03]
-  kind:     security
-  tier:     host
-  needs:    []
-  does:      Derives the SoftAP name and passphrase from a known MAC, and from a MAC one bit apart
-  expected:  Both match the documented rule, differ between devices, and clear the WPA2 minimum; a short buffer reports failure
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-PRV-02
+  - FR-SEC-03
+  tier: host
+  needs: []
+  does: Derives the SoftAP name and passphrase from a known MAC, and from a MAC one bit apart
+  expected: Both match the documented rule, differ between devices, and clear the WPA2 minimum; a short buffer reports
+    failure
   procedure: ctest -R TS-104
-  status:    successful
-  reason:
-  commit:    59cca9d
-  when:      2026-08-05T19:10Z
-
+  status: successful
+  reason: null
+  commit: 59cca9d
+  when: 2026-08-05T19:10Z
 - id: TS-053
-  verifies: [FR-PRV-01]
-  kind:     security
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
-  expected:  Correct passphrase associates; wrong one rejected
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-PRV-01
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Enter Provisioning; attempt association with the derived passphrase, then a wrong one
+  expected: Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
-  status:    not done
-  reason:    "written 2026-08-05 in test_provisioning.py, including the wrong-passphrase half; awaiting a run"
-  commit:
-  when:
-
+  status: not done
+  reason: written 2026-08-05 in test_provisioning.py, including the wrong-passphrase half; awaiting a run
+  commit: null
+  when: null
 - id: TS-054
-  verifies: [FR-PRV-02]
-  kind:     security
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Enter Provisioning; attempt association with the derived passphrase, then a wrong one
-  expected:  Correct passphrase associates; wrong one rejected
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-PRV-02
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Enter Provisioning; attempt association with the derived passphrase, then a wrong one
+  expected: Correct passphrase associates; wrong one rejected
   procedure: P-NETWORK
-  status:    not done
-  reason:    "written 2026-08-05 in test_provisioning.py; awaiting a run"
-  commit:
-  when:
-
+  status: not done
+  reason: written 2026-08-05 in test_provisioning.py; awaiting a run
+  commit: null
+  when: null
 - id: TS-055
-  verifies: [FR-PRV-03]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Associate and request any hostname
-  expected:  The configuration page is served
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-PRV-03
+  tier: bench
+  needs:
+  - board
+  does: Associate and request any hostname
+  expected: The configuration page is served
   procedure: P-METER
-  status:    successful
-  reason:    "passed 2026-08-05 - example.com/generate_204 and any path both return the form. Re-run once 4a6caf8 is flashed; it changed page rendering"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - example.com/generate_204 and any path both return the form. Re-run once 4a6caf8 is
+    flashed; it changed page rendering
+  commit: e1ce921
+  when: null
 - id: TS-056
-  verifies: [FR-PRV-04]
-  kind:     deviation
-  tier:     target
-  needs:    [board, button-gpio]
-  does:      Hold the button through a reset
-  expected:  Device boots normally
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-PRV-04
+  tier: target
+  needs:
+  - board
+  - physical-button
+  does: Hold the button through a reset
+  expected: Device boots normally
   procedure: P-TARGET
-  status:    not done
-  reason:    needs button-gpio — unavailable
-  commit:
-  when:
-
+  status: not done
+  reason: not yet run with the physical button
+  commit: null
+  when: null
 - id: TS-057
-  verifies: [FR-PRV-05]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mbus-sim]
-  does:      Submit configuration; power-cycle
-  expected:  Configuration survives
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-PRV-05
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  does: Submit configuration; power-cycle
+  expected: Configuration survives
   procedure: P-METER
-  status:    successful
-  reason:    "passed 2026-08-05 - submission saved, device rebooted reporting cfg=nvs and joined the stored network"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - submission saved, device rebooted reporting cfg=nvs and joined the stored network
+  commit: e1ce921
+  when: null
 - id: TS-058
-  verifies: [FR-PRV-06]
-  kind:     deviation
-  tier:     bench
-  needs:    [board]
-  does:      Enter Provisioning, wait for timeout without submitting
-  expected:  Prior configuration intact
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-PRV-06
+  tier: bench
+  needs:
+  - board
+  does: Enter Provisioning, wait for timeout without submitting
+  expected: Prior configuration intact
   procedure: P-METER
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-059
-  verifies: [FR-PRV-07]
-  kind:     standard
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Enter Provisioning with at least one access point in range
-  expected:  The configuration page lists it
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-PRV-07
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Enter Provisioning with at least one access point in range
+  expected: The configuration page lists it
   procedure: P-NETWORK
-  status:    not done
-  reason:    "written 2026-08-05 in test_provisioning.py, and it also guards the scan moving out of the request path in 4a6caf8; awaiting a run"
-  commit:
-  when:
-
+  status: not done
+  reason: written 2026-08-05 in test_provisioning.py, and it also guards the scan moving out of the request path
+    in 4a6caf8; awaiting a run
+  commit: null
+  when: null
 - id: TS-060
-  verifies: [NFR-PRV-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Enter Provisioning, then associate with the SoftAP
-  expected:  Association succeeds within 10 s of entering the state
+  kind: atomic
+  scenario: standard
+  verifies:
+  - NFR-PRV-01
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Enter Provisioning, then associate with the SoftAP
+  expected: Association succeeds within 10 s of entering the state
   procedure: P-NETWORK
-  status:    not done
-  reason:    "unrun - association works, but the timing NFR was never measured"
-  commit:
-  when:
-
+  status: not done
+  reason: unrun - association works, but the timing NFR was never measured
+  commit: null
+  when: null
 - id: TS-061
-  verifies: [FR-PRV-08]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mqtt-broker, wifi-ap]
-  does:      Enter `homeassistant.local` as the broker address at the portal
-  expected:  Either it resolves and a session follows, or the portal states why it cannot
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-PRV-08
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - wifi-ap
+  does: Enter `homeassistant.local` as the broker address at the portal
+  expected: Either it resolves and a session follows, or the portal states why it cannot
   procedure: P-NETWORK
-  status:    successful
-  reason:    "passed 2026-08-05 with a schemeless literal (192.168.4.1) rather than homeassistant.local - same rule, refused with \"broker URI has no scheme\""
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 with a schemeless literal (192.168.4.1) rather than homeassistant.local - same rule,
+    refused with "broker URI has no scheme"
+  commit: e1ce921
+  when: null
 - id: TS-106
-  verifies: [FR-OTA-01, FR-OTA-02]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an overlong string
-  expected:  Both schemes accepted; everything malformed refused before anything is fetched
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-OTA-01
+  - FR-OTA-02
+  tier: host
+  needs: []
+  does: Judges the payloads the command topic can carry - relay URLs, schemes we cannot fetch, wrapped text, an
+    overlong string
+  expected: Both schemes accepted; everything malformed refused before anything is fetched
   procedure: ctest -R TS-106
-  status:    successful
-  reason:
-  commit:    d76cf86
-  when:      2026-08-05T20:10Z
-
+  status: successful
+  reason: null
+  commit: d76cf86
+  when: 2026-08-05T20:10Z
 - id: TS-062
-  verifies: [FR-OTA-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Publish a valid URL to the command topic
-  expected:  Download begins within 5 s
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-OTA-01
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Publish a valid URL to the command topic
+  expected: Download begins within 5 s
   procedure: P-METER
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-063
-  verifies: [FR-OTA-02]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker, ota-relay]
-  does:      Run 24 h with a newer release published
-  expected:  No download
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-OTA-02
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - ota-relay
+  does: Run 24 h with a newer release published
+  expected: No download
   procedure: P-OTA
-  status:    successful
-  reason:    90 s with an unannounced image in the relay produced no download
-  commit:    2d27604
-  when:      2026-08-05T21:20Z
-
+  status: successful
+  reason: 90 s with an unannounced image in the relay produced no download
+  commit: 2d27604
+  when: 2026-08-05T21:20Z
 - id: TS-064
-  verifies: [FR-OTA-03]
-  kind:     security
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Serve an image over TLS with an untrusted certificate
-  expected:  Download aborted, image not written
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-OTA-03
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Serve an image over TLS with an untrusted certificate
+  expected: Download aborted, image not written
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-065
-  verifies: [FR-OTA-04]
-  kind:     standard
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Trigger an update while running from one OTA slot
-  expected:  The image is written to the inactive slot
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-OTA-04
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Trigger an update while running from one OTA slot
+  expected: The image is written to the inactive slot
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-066
-  verifies: [FR-OTA-05]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker, ota-relay]
-  does:      Update to an image that boots but cannot reach the broker
-  expected:  The image is never marked valid
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-OTA-05
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - ota-relay
+  does: Update to an image that boots but cannot reach the broker
+  expected: The image is never marked valid
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-067
-  verifies: [FR-OTA-06]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mqtt-broker, ota-relay]
-  does:      Update while the meter is silent
-  expected:  The image is marked valid once the broker session is established
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-OTA-06
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - ota-relay
+  does: Update while the meter is silent
+  expected: The image is marked valid once the broker session is established
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-068
-  verifies: [FR-OTA-07]
-  kind:     negative
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Update, then reset before validation completes
-  expected:  The previously valid image runs
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-OTA-07
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Update, then reset before validation completes
+  expected: The previously valid image runs
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-069
-  verifies: [FR-OTA-08]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mqtt-broker, ota-relay]
-  does:      Feed meter cycles throughout a download
-  expected:  Decoding continues
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-OTA-08
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - ota-relay
+  does: Feed meter cycles throughout a download
+  expected: Decoding continues
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-070
-  verifies: [FR-OTA-09]
-  kind:     negative
-  tier:     bench
-  needs:    [board, ota-relay, wifi-ap]
-  does:      Disable the access point mid-download
-  expected:  Download aborted, partial image discarded
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-OTA-09
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  - wifi-ap
+  does: Disable the access point mid-download
+  expected: Download aborted, partial image discarded
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-071
-  verifies: [NFR-OTA-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board, ha-bridge]
-  does:      Read the device entry in Home Assistant after a session is established
-  expected:  The version shown matches the running firmware's version string
-  procedure: P-METER
-  status:    not done
-  reason:    needs ha-bridge — unavailable
-  commit:
-  when:
-
+  kind: atomic
+  scenario: standard
+  verifies:
+  - NFR-OTA-01
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - mbus-sim
+  does: Read a retained discovery payload at the broker after a session is established
+  expected: device.sw_version matches the running firmware's version string, and is neither blank nor
+    a build-time placeholder
+  procedure: P-NETWORK
+  status: not done
+  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0);
+    the test itself is not written yet
+  commit: null
+  when: null
 - id: TS-105
-  verifies: [FR-LED-05]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Reads every pair of indications against each other, and each one against FSD 11.3's table
-  expected:  No two alike; every colour and period is the one the table names
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-05
+  tier: host
+  needs: []
+  does: Reads every pair of indications against each other, and each one against FSD 11.3's table
+  expected: No two alike; every colour and period is the one the table names
   procedure: ctest -R TS-105
-  status:    successful
-  reason:
-  commit:    a145708
-  when:      2026-08-05T19:55Z
-
+  status: successful
+  reason: null
+  commit: a145708
+  when: 2026-08-05T19:55Z
 - id: TS-072
-  verifies: [FR-LED-01]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Drive the DUT through every supervisor state
-  expected:  Indication matches §11.3
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-01
+  tier: bench
+  needs:
+  - board
+  does: Drive the DUT through every supervisor state
+  expected: Indication matches §11.3
   procedure: P-METER
-  status:    successful
-  reason: >
-    Passed on the acceptance rule for this rig: a few proper signals decode.
-    In mode 2 - one 144-byte frame, 4.3 s of silence around it - every cycle
-    decodes four objects including the meter identity, with no lead-in needed.
-
-    The measurement that prompted this stays on record because it is real and
-    may matter at the meter. In mode 3 the full 417-byte telegram spans three
-    GBT blocks, the board receives about 370 of them, and the missing bytes are
-    always the opening 7E A0 95 of frame 1 - so the identity never survives.
-    Six bytes of preamble removes it entirely; zero bytes decodes nothing.
-
-    That is a property of this simulator, not a firmware defect, and chasing it
-    is not this project's work. Whether the installed meter shows the same head
-    loss is a field question - TS-103.
-  commit:    15b05f5
-  when:      2026-08-05T22:20Z
-
+  status: successful
+  reason: |
+    Passed on the acceptance rule for this rig: a few proper signals decode. In mode 2 - one 144-byte frame, 4.3 s of silence around it - every cycle decodes four objects including the meter identity, with no lead-in needed.
+    The measurement that prompted this stays on record because it is real and may matter at the meter. In mode 3 the full 417-byte telegram spans three GBT blocks, the board receives about 370 of them, and the missing bytes are always the opening 7E A0 95 of frame 1 - so the identity never survives. Six bytes of preamble removes it entirely; zero bytes decodes nothing.
+    That is a property of this simulator, not a firmware defect, and chasing it is not this project's work. Whether the installed meter shows the same head loss is a field question - TS-103.
+  commit: 15b05f5
+  when: 2026-08-05T22:20Z
 - id: TS-073
-  verifies: [FR-LED-02]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Drive the DUT through every supervisor state
-  expected:  Indication matches §11.3
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-02
+  tier: bench
+  needs:
+  - board
+  does: Drive the DUT through every supervisor state
+  expected: Indication matches §11.3
   procedure: P-METER
-  status:    not done
-  reason: >
-    The board's LED pins reach nothing the workbench can read, so no bench test
-    can see the light. The firmware logs each indication change as a seam and
-    the test asserts that - which proves the state machine chose the right
-    indication, not that an LED lit or that the colour is right. One person
-    looking at the board closes that gap for all five requirements at once.
-  commit:
-  when:
-
+  status: not done
+  reason: |
+    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  commit: null
+  when: null
 - id: TS-074
-  verifies: [FR-LED-03]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Drive the DUT through every supervisor state
-  expected:  Indication matches §11.3
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-03
+  tier: bench
+  needs:
+  - board
+  does: Drive the DUT through every supervisor state
+  expected: Indication matches §11.3
   procedure: P-METER
-  status:    not done
-  reason: >
-    The board's LED pins reach nothing the workbench can read, so no bench test
-    can see the light. The firmware logs each indication change as a seam and
-    the test asserts that - which proves the state machine chose the right
-    indication, not that an LED lit or that the colour is right. One person
-    looking at the board closes that gap for all five requirements at once.
-  commit:
-  when:
-
+  status: not done
+  reason: |
+    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  commit: null
+  when: null
 - id: TS-075
-  verifies: [FR-LED-04]
-  kind:     standard
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Trigger an OTA; observe from command to reboot
-  expected:  Update pattern for the whole window
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-04
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Trigger an OTA; observe from command to reboot
+  expected: Update pattern for the whole window
   procedure: P-OTA
-  status:    not done
-  reason: >
-    The board's LED pins reach nothing the workbench can read, so no bench test
-    can see the light. The firmware logs each indication change as a seam and
-    the test asserts that - which proves the state machine chose the right
-    indication, not that an LED lit or that the colour is right. One person
-    looking at the board closes that gap for all five requirements at once.
-  commit:
-  when:
-
+  status: not done
+  reason: |
+    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  commit: null
+  when: null
 - id: TS-076
-  verifies: [FR-LED-05]
-  kind:     standard
-  tier:     bench
-  needs:    [board]
-  does:      Drive the DUT through every supervisor state
-  expected:  Indication matches §11.3
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-LED-05
+  tier: bench
+  needs:
+  - board
+  does: Drive the DUT through every supervisor state
+  expected: Indication matches §11.3
   procedure: P-METER
-  status:    not done
-  reason: >
-    The board's LED pins reach nothing the workbench can read, so no bench test
-    can see the light. The firmware logs each indication change as a seam and
-    the test asserts that - which proves the state machine chose the right
-    indication, not that an LED lit or that the colour is right. One person
-    looking at the board closes that gap for all five requirements at once.
-  commit:
-  when:
-
+  status: not done
+  reason: |
+    The board's LED pins reach nothing the workbench can read, so no bench test can see the light. The firmware logs each indication change as a seam and the test asserts that - which proves the state machine chose the right indication, not that an LED lit or that the colour is right. One person looking at the board closes that gap for all five requirements at once.
+  commit: null
+  when: null
 - id: TS-102
-  verifies: [FR-NVS-02]
-  kind:     negative
-  tier:     host
-  needs:    []
-  does:      Judges every malformed stored record the flash can hand back - empty, overlong, no scheme, bad hostname
-  expected:  Each is refused and named; a complete record and an open network are accepted
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-NVS-02
+  tier: host
+  needs: []
+  does: Judges every malformed stored record the flash can hand back - empty, overlong, no scheme, bad hostname
+  expected: Each is refused and named; a complete record and an open network are accepted
   procedure: ctest -R TS-102
-  status:    successful
-  reason:
-  commit:    082c610
-  when:      2026-08-05T17:50Z
-
+  status: successful
+  reason: null
+  commit: 082c610
+  when: 2026-08-05T17:50Z
 - id: TS-077
-  verifies: [FR-NVS-01]
-  kind:     standard
-  tier:     target
-  needs:    [board]
-  does:      Provision the device, then dump the NVS partition
-  expected:  The stored configuration values are readable
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-NVS-01
+  tier: target
+  needs:
+  - board
+  does: Provision the device, then dump the NVS partition
+  expected: The stored configuration values are readable
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-078
-  verifies: [FR-NVS-02]
-  kind:     negative
-  tier:     target
-  needs:    [board]
-  does:      Corrupt the NVS partition; boot
-  expected:  Device boots and enters Provisioning
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-NVS-02
+  tier: target
+  needs:
+  - board
+  does: Corrupt the NVS partition; boot
+  expected: Device boots and enters Provisioning
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-079
-  verifies: [FR-NVS-03]
-  kind:     negative
-  tier:     bench
-  needs:    [board, power-cycle]
-  does:      Cut power 100 times during normal operation
-  expected:  Configuration intact each time
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-NVS-03
+  tier: bench
+  needs:
+  - board
+  - power-cycle-endurance
+  does: Cut power 100 times during normal operation
+  expected: Configuration intact each time
   procedure: P-METER
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: needs power-cycle-endurance - unavailable. The firmware implements this as of 4a6caf8, and
+    the manual power-cycle capability cannot stand in, because nobody operates a lead a hundred times
+  commit: null
+  when: null
 - id: TS-081
-  verifies: [FR-WDT-01]
-  kind:     negative
-  tier:     target
-  needs:    [board]
-  does:      Stall one watchdog-subscribed task
-  expected:  The device resets within the configured task-watchdog period (5 s)
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-WDT-01
+  tier: target
+  needs:
+  - board
+  does: Stall one watchdog-subscribed task
+  expected: The device resets within the configured task-watchdog period (5 s)
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-082
-  verifies: [FR-WDT-02]
-  kind:     negative
-  tier:     target
-  needs:    [board]
-  does:      Command a test build into an infinite loop in one task
-  expected:  Device resets within the timeout and returns to `OPERATIONAL`
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-WDT-02
+  tier: target
+  needs:
+  - board
+  does: Command a test build into an infinite loop in one task
+  expected: Device resets within the timeout and returns to `OPERATIONAL`
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-083
-  verifies: [FR-WDT-03]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, mqtt-broker, ota-relay]
-  does:      Feed no meter data for 30 min while connected; separately, run a full OTA
-  expected:  No reset in either case
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-WDT-03
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - ota-relay
+  does: Feed no meter data for 30 min while connected; separately, run a full OTA
+  expected: No reset in either case
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-084
-  verifies: [FR-WDT-04]
-  kind:     standard
-  tier:     target
-  needs:    [board]
-  does:      Force a watchdog reset; read the console
-  expected:  Reset reason reported as watchdog
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-WDT-04
+  tier: target
+  needs:
+  - board
+  does: Force a watchdog reset; read the console
+  expected: Reset reason reported as watchdog
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-085
-  verifies: [FR-WDT-05]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker, wifi-ap, wifi-ap-outage]
-  does:      Drop the access point, stop the broker, and silence the meter, each in turn
-  expected:  The reset reason is unchanged across all three
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-WDT-05
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - wifi-ap
+  - wifi-ap-outage
+  does: Drop the access point, stop the broker, and silence the meter, each in turn
+  expected: The reset reason is unchanged across all three
   procedure: P-NETWORK
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-086
-  verifies: [FR-ID-01]
-  kind:     negative
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Publish discovery for a known meter, then present a different serial
-  expected:  "`unique_id` follows the meter serial"
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-ID-01
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Publish discovery for a known meter, then present a different serial
+  expected: '`unique_id` follows the meter serial'
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-087
-  verifies: [FR-ID-02]
-  kind:     standard
-  tier:     bench
-  needs:    [board, mqtt-broker]
-  does:      Inspect the client identifier and the operational topic prefix
-  expected:  Both contain the device MAC
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-ID-02
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  does: Inspect the client identifier and the operational topic prefix
+  expected: Both contain the device MAC
   procedure: P-METER
-  status:    not done
-  reason:    test not written
-  commit:
-  when:
-
+  status: not done
+  reason: test not written
+  commit: null
+  when: null
 - id: TS-088
-  verifies: [FR-ID-03]
-  kind:     deviation
-  tier:     bench
-  needs:    [board, second-board]
-  does:      Record entity IDs; swap in a second gPlug on the same meter
-  expected:  Entity IDs unchanged; history continues
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-ID-03
+  tier: bench
+  needs:
+  - board
+  - second-board
+  does: Record entity IDs; swap in a second gPlug on the same meter
+  expected: Entity IDs unchanged; history continues
   procedure: P-METER
-  status:    not done
-  reason:    needs second-board — unavailable
-  commit:
-  when:
-
+  status: not done
+  reason: needs second-board — unavailable
+  commit: null
+  when: null
 - id: TS-089
-  verifies: [FR-SEC-01]
-  kind:     security
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Serve an image with a self-signed certificate
-  expected:  Rejected, image not written
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-SEC-01
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Serve an image with a self-signed certificate
+  expected: Rejected, image not written
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-090
-  verifies: [FR-SEC-02]
-  kind:     security
-  tier:     bench
-  needs:    [board, ota-relay]
-  does:      Serve an image with an expired certificate
-  expected:  Rejected, image not written
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-SEC-02
+  tier: bench
+  needs:
+  - board
+  - ota-relay
+  does: Serve an image with an expired certificate
+  expected: Rejected, image not written
   procedure: P-OTA
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-091
-  verifies: [FR-SEC-03]
-  kind:     security
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Scan for the SoftAP while Provisioning is active
-  expected:  The network advertises WPA2
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-SEC-03
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Scan for the SoftAP while Provisioning is active
+  expected: The network advertises WPA2
   procedure: P-NETWORK
-  status:    successful
-  reason:    "passed 2026-08-05 - the scan shows the SoftAP as WPA2, not open"
-  commit:    e1ce921
-  when:
-
+  status: successful
+  reason: passed 2026-08-05 - the scan shows the SoftAP as WPA2, not open
+  commit: e1ce921
+  when: null
 - id: TS-092
-  verifies: [FR-SEC-04]
-  kind:     security
-  tier:     bench
-  needs:    [board, wifi-ap]
-  does:      Request every portal endpoint after provisioning
-  expected:  No passphrase in any response body
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-SEC-04
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  does: Request every portal endpoint after provisioning
+  expected: No passphrase in any response body
   procedure: P-NETWORK
-  status:    not done
-  reason:    "written 2026-08-05 in test_provisioning.py as the CP-008 check - an unreadable submission must not read as a missing field; awaiting a run"
-  commit:
-  when:
-
+  status: not done
+  reason: written 2026-08-05 in test_provisioning.py as the CP-008 check - an unreadable submission must not read
+    as a missing field; awaiting a run
+  commit: null
+  when: null
 - id: TS-093
-  verifies: [NFR-SEC-01]
-  kind:     security
-  tier:     target
-  needs:    [board, wifi-ap]
-  does:      Dump the flash of a provisioned device
-  expected:  The WiFi passphrase is readable in plaintext
+  kind: atomic
+  scenario: security
+  verifies:
+  - NFR-SEC-01
+  tier: target
+  needs:
+  - board
+  - wifi-ap
+  does: Dump the flash of a provisioned device
+  expected: The WiFi passphrase is readable in plaintext
   procedure: P-TARGET
-  status:    not done
-  reason:    "the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap and no longer a firmware gap"
-  commit:
-  when:
-
+  status: not done
+  reason: the firmware implements this as of 4a6caf8 - the test itself is not written yet, so this is a suite gap
+    and no longer a firmware gap
+  commit: null
+  when: null
 - id: TS-094
-  verifies: [FR-BLD-01]
-  kind:     standard
-  tier:     other
-  needs:    []
-  does:      Build at a tagged commit
-  expected:  The version string equals the tag
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-01
+  tier: other
+  needs: []
+  does: Build at a tagged commit
+  expected: The version string equals the tag
   procedure: tools/check-artefacts.sh
-  status:    not done
-  reason:    tagged build; no tag on HEAD yet
-  commit:
-  when:
-
+  status: not done
+  reason: tagged build; no tag on HEAD yet
+  commit: null
+  when: null
 - id: TS-095
-  verifies: [FR-BLD-02]
-  kind:     standard
-  tier:     other
-  needs:    []
-  does:      Build an untagged commit
-  expected:  The version string includes the short commit hash
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-02
+  tier: other
+  needs: []
+  does: Build an untagged commit
+  expected: The version string includes the short commit hash
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    
-  commit:    288f210
-  when:      2026-08-05T14:20Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:20Z
 - id: TS-096
-  verifies: [FR-BLD-03]
-  kind:     standard
-  tier:     other
-  needs:    []
-  does:      Inspect the production binary and the variant-selection mechanism
-  expected:  Selection is a compile-time option; the production binary contains no capture data
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-03
+  tier: other
+  needs: []
+  does: Inspect the production binary and the variant-selection mechanism
+  expected: Selection is a compile-time option; the production binary contains no capture data
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    
-  commit:    288f210
-  when:      2026-08-05T14:20Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:20Z
 - id: TS-097
-  verifies: [FR-BLD-04]
-  kind:     negative
-  tier:     other
-  needs:    []
-  does:      Search the production binary for the embedded capture data
-  expected:  Absent
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-BLD-04
+  tier: other
+  needs: []
+  does: Search the production binary for the embedded capture data
+  expected: Absent
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    
-  commit:    288f210
-  when:      2026-08-05T14:20Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:20Z
 - id: TS-098
-  verifies: [FR-BLD-05]
-  kind:     standard
-  tier:     other
-  needs:    []
-  does:      Build the simulated variant
-  expected:  The version string carries the `-sim` suffix
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-05
+  tier: other
+  needs: []
+  does: Build the simulated variant
+  expected: The version string carries the `-sim` suffix
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:
-  commit:    7c6e677
-  when:      2026-08-05T17:17Z
-
+  status: successful
+  reason: null
+  commit: 7c6e677
+  when: 2026-08-05T17:17Z
 - id: TS-099
-  verifies: [FR-BLD-06]
-  kind:     standard
-  tier:     bench
-  needs:    [board, ha-bridge]
-  does:      Run the simulated build against a Home Assistant instance
-  expected:  Entities appear only under the test prefix
-  procedure: P-METER
-  status:    not done
-  reason:    needs ha-bridge — unavailable
-  commit:
-  when:
-
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-06
+  tier: bench
+  needs:
+  - board
+  - mqtt-broker
+  - mbus-sim
+  does: Run the simulated build against the bench broker while subscribed to '#'
+  expected: Discovery topics appear only under the test prefix, and none under homeassistant/
+  procedure: P-NETWORK
+  status: not done
+  reason: runnable since 2026-08-06, when the verification boundary moved to the broker (FSD 22.0);
+    the test itself is not written yet
+  commit: null
+  when: null
 - id: TS-100
-  verifies: [FR-BLD-07]
-  kind:     standard
-  tier:     other
-  needs:    []
-  does:      Inspect `.github/workflows/`
-  expected:  Both workflows trigger on `push`; the host job runs `ctest`
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-BLD-07
+  tier: other
+  needs: []
+  does: Inspect `.github/workflows/`
+  expected: Both workflows trigger on `push`; the host job runs `ctest`
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    
-  commit:    288f210
-  when:      2026-08-05T14:20Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:20Z
 - id: TS-112
-  verifies: [FR-SUP-09]
-  kind:     security
-  tier:     other
-  needs:    []
-  does:      Searches a built production image for the bench WiFi credentials
-  expected:  Neither the bench SSID nor its passphrase appears in the binary
+  kind: atomic
+  scenario: security
+  verifies:
+  - FR-SUP-09
+  tier: other
+  needs: []
+  does: Searches a built production image for the bench WiFi credentials
+  expected: Neither the bench SSID nor its passphrase appears in the binary
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    "passed in CI run 31055026834 - PASS TS-112 no bench credentials in the image"
-  commit:    4a6caf8
-  when:
-
+  status: successful
+  reason: passed in CI run 31055026834 - PASS TS-112 no bench credentials in the image
+  commit: 4a6caf8
+  when: null
 - id: TS-101
-  verifies: [FR-BLD-08]
-  kind:     negative
-  tier:     other
-  needs:    []
-  does:      Push to a branch without a tag
-  expected:  No release asset produced
+  kind: atomic
+  scenario: negative
+  verifies:
+  - FR-BLD-08
+  tier: other
+  needs: []
+  does: Push to a branch without a tag
+  expected: No release asset produced
   procedure: tools/check-artefacts.sh
-  status:    successful
-  reason:    
-  commit:    288f210
-  when:      2026-08-05T14:20Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:20Z
 - id: TS-003
-  verifies: [FR-AGG-02]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Decodes a capture whose serial spans a General Block Transfer boundary
-  expected:  Both halves present - '4433' alone would mean no reassembly
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-AGG-02
+  tier: host
+  needs: []
+  does: Decodes a capture whose serial spans a General Block Transfer boundary
+  expected: Both halves present - '4433' alone would mean no reassembly
   procedure: ctest -R TS-003
-  status:    successful
-  reason:
-  commit:    288f210
-  when:      2026-08-05T14:05Z
-
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:05Z
 - id: TS-004
-  verifies: [FR-DEC-03]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Decodes a capture with a known true value and its scaler
-  expected:  The value is scaled exactly once, by the caller
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-DEC-03
+  tier: host
+  needs: []
+  does: Decodes a capture with a known true value and its scaler
+  expected: The value is scaled exactly once, by the caller
   procedure: ctest -R TS-004
-  status:    successful
-  reason:
-  commit:    288f210
-  when:      2026-08-05T14:05Z
-
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:05Z
 - id: TS-005
-  verifies: [FR-DEC-04]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Decodes a cumulative register above 16,777,216
-  expected:  The value is exact; float would quantise it
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-DEC-04
+  tier: host
+  needs: []
+  does: Decodes a cumulative register above 16,777,216
+  expected: The value is exact; float would quantise it
   procedure: ctest -R TS-005
-  status:    successful
-  reason:
-  commit:    288f210
-  when:      2026-08-05T14:05Z
-
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:05Z
 - id: TS-006
-  verifies: [FR-AGG-01]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Feeds frames separated by 1999 ms, then 2000 ms, then 2001 ms
-  expected:  No boundary at 1999 ms; a boundary at 2000 ms and 2001 ms
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-AGG-01
+  tier: host
+  needs: []
+  does: Feeds frames separated by 1999 ms, then 2000 ms, then 2001 ms
+  expected: No boundary at 1999 ms; a boundary at 2000 ms and 2001 ms
   procedure: ctest -R TS-006
-  status:    successful
-  reason:
-  commit:    288f210
-  when:      2026-08-05T14:05Z
-
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:05Z
 - id: TS-008
-  verifies: [FR-HA-02, FR-HA-04]
-  kind:     standard
-  tier:     host
-  needs:    []
-  does:      Builds the Home Assistant discovery payloads
-  expected:  unique_id and device_class are correct for every published entity
+  kind: atomic
+  scenario: standard
+  verifies:
+  - FR-HA-02
+  - FR-HA-04
+  tier: host
+  needs: []
+  does: Builds the Home Assistant discovery payloads
+  expected: unique_id and device_class are correct for every published entity
   procedure: ctest -R TS-008
-  status:    successful
-  reason:
-  commit:    288f210
-  when:      2026-08-05T14:05Z
+  status: successful
+  reason: null
+  commit: 288f210
+  when: 2026-08-05T14:05Z
+- id: WF-001
+  kind: workflow
+  scenario: standard
+  role: release-gate
+  name: Commission a factory-new device
+  validates:
+  - AC-1
+  children:
+  - TS-030
+  - TS-053
+  - TS-054
+  - TS-055
+  - TS-059
+  - TS-060
+  - TS-057
+  - TS-031
+  - TS-045
+  - TS-108
+  - TS-109
+  - TS-110
+  - TS-111
+  - TS-071
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device_power: 'off'
+    nvs: erased
+    access_point: available
+    broker: available
+    meter_simulator: silent
+  steps:
+  - id: prepare
+    action: confirm_bench_ready
+    with:
+      required_capabilities:
+      - board
+      - wifi-ap
+      - mqtt-broker
+      - mbus-sim
+  - id: factory-reset
+    action: erase_nvs
+    checkpoint_tests:
+    - TS-030
+  - id: boot
+    action: boot_device
+    with:
+      timeout_s: 15
+    expect:
+      supervisor_state: PROVISIONING
+    checkpoint_tests:
+    - TS-030
+  - id: find-softap
+    action: wait_for_device_softap
+    with:
+      timeout_s: 10
+    checkpoint_tests:
+    - TS-053
+    - TS-054
+    - TS-060
+  - id: join-softap
+    action: connect_to_device_softap
+    with:
+      passphrase: derived-from-device-mac
+      expected_result: associated
+    checkpoint_tests:
+    - TS-053
+    - TS-054
+  - id: open-portal
+    action: request_configuration_page
+    with:
+      hostname: example.com
+    checkpoint_tests:
+    - TS-055
+    - TS-059
+  - id: configure
+    action: submit_configuration
+    with:
+      wifi_ssid: capability:wifi-ap.parameters.ssid
+      wifi_passphrase: capability:wifi-ap.parameters.passphrase
+      broker_host: capability:mqtt-broker.parameters.host
+      broker_port: 1883
+      mqtt_username: ''
+      mqtt_password: ''
+      dlms_key: ''
+    checkpoint_tests:
+    - TS-057
+  - id: join-configured-ap
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:wifi-ap.parameters.ssid
+      expected_bssid: capability:wifi-ap.parameters.bssid
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-031
+  - id: connect-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+  - id: provide-meter-data
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      cycles: 3
+      identity: '44337811'
+      energy: 12345
+      fault: none
+    checkpoint_tests:
+    - TS-108
+    - TS-109
+  - id: observe-live-state
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-110
+  - id: observe-discovery
+    action: read_discovery_messages
+    with:
+      discovery_prefix: homeassistant
+    checkpoint_tests:
+    - TS-045
+    - TS-111
+  - id: check-discovery-contract
+    action: observe_discovery_contract
+    with:
+      expected_entities: Appendix B entities present in the cycle
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-071
+  - id: restore
+    action: restore_bench
+  expected: A factory-new device, touched only through its own portal, reaches OPERATIONAL and leaves at the broker
+    a retained discovery configuration for every entity the cycle contained, each carrying the classes and units
+    a consumer needs, alongside live state publications that follow the meter.
+  must_not:
+  - the device joins an access point other than the configured BSSID
+  - discovery is published before the meter identity is known
+  - retained stale state is accepted as a live measurement
+  - a discovery configuration exists for an entity absent from the cycle
+  - a state_topic is published that nothing publishes to
+  status: not done
+  reason: unblocked 2026-08-06 - every capability it needs is available and the whole journey was driven by hand
+    on 2026-08-05; the workflow is not implemented as an executable test yet
+  commit: null
+  when: null
+  evidence_required:
+  - serial log from factory boot through OPERATIONAL
+  - SoftAP SSID, BSSID and security observation
+  - portal submission request and response
+  - configured AP SSID and BSSID association
+  - MQTT client-session evidence
+  - discovery topics and payloads, with retain flags
+  - fresh state message
+- id: WF-002
+  kind: workflow
+  scenario: standard
+  role: release-gate
+  name: Accumulate energy across a simulated day
+  validates:
+  - AC-2
+  children:
+  - TS-004
+  - TS-005
+  - TS-007
+  - TS-008
+  - TS-026
+  - TS-045
+  - TS-052
+  - TS-108
+  - TS-110
+  - TS-111
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    discovery_present: one retained configuration per energy entity
+    initial_energy_counter: recorded
+  steps:
+  - id: confirm-baseline
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-110
+  - id: inspect-discovery
+    action: read_discovery_messages
+    with:
+      discovery_prefix: homeassistant
+    checkpoint_tests:
+    - TS-008
+    - TS-111
+  - id: feed-simulated-day
+    action: feed_meter_cycles
+    with:
+      sequence: decision:TDD-001.decision.sequence
+      fault: none
+    checkpoint_tests:
+    - TS-004
+    - TS-005
+    - TS-007
+    - TS-026
+    - TS-108
+  - id: observe-publications
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 2
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: check-energy-entity-contract
+    action: observe_discovery_contract
+    with:
+      expected_entities: energy entities from Appendix B
+      timeout_s: 60
+      require:
+        device_class: energy
+        state_class: total_increasing
+        unit_of_measurement: kWh
+  - id: check-accumulation
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: decision:TDD-001.decision.sequence.cycles
+      timeout_s: 300
+      oracle: decision:TDD-001.decision.oracle
+  - id: restore
+    action: restore_bench
+  expected: The ordered series of published energy values matches the simulated sequence exactly after unit conversion,
+    the accumulated delta equals the value TDD-001 fixes, and the discovery payloads carry the classes and unit that
+    make those values usable as an energy series.
+  must_not:
+  - energy decreases
+  - energy is scaled twice
+  - cumulative values lose integer precision
+  - an absent register is published as zero
+  - a published value is inferred from a retained message rather than a fresh one
+  status: not done
+  reason: unblocked 2026-08-06 by moving the oracle from the Energy Dashboard to the published series and the discovery
+    payload (FSD 22.0); the workflow is not implemented yet
+  commit: null
+  when: null
+  evidence_required:
+  - initial and final simulator counter values
+  - complete ordered state-message series, with arrival timestamps
+  - discovery payloads for energy entities, with retain flags
+  - calculated expected and observed accumulated delta
+- id: WF-003
+  kind: workflow
+  scenario: negative
+  role: release-gate
+  name: Recover from a 10-minute WiFi outage
+  validates:
+  - AC-3
+  children:
+  - TS-032
+  - TS-033
+  - TS-034
+  - TS-037
+  - TS-040
+  - TS-042
+  - TS-110
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - wifi-ap-outage
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    wifi: associated with intended BSSID
+    mqtt: connected
+    fresh_publication: confirmed
+  steps:
+  - id: confirm-live-service
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-110
+  - id: remove-access-point
+    action: stop_access_point
+  - id: observe-outage
+    action: observe_for_duration
+    with:
+      duration_s: 600
+      required_observations:
+      - WiFi retries continue
+      - retry interval remains capped
+      - meter ingestion continues
+      prohibited_observations:
+      - Provisioning starts
+      - device resets
+      - retries stop
+    checkpoint_tests:
+    - TS-032
+    - TS-033
+    - TS-034
+    - TS-037
+    - TS-042
+  - id: restore-access-point
+    action: start_access_point
+  - id: wait-for-wifi
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:wifi-ap.parameters.ssid
+      expected_bssid: capability:wifi-ap.parameters.bssid
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-032
+    - TS-033
+  - id: wait-for-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-040
+  - id: prove-full-recovery
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 2
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-110
+  - id: restore
+    action: restore_bench
+  expected: The device remains unattended, never enters Provisioning, reconnects to the intended access point and
+    broker, and resumes fresh measurement publication.
+  must_not:
+  - manual reset is required
+  - Provisioning appears during the outage
+  - a retained pre-outage message is accepted as recovery
+  status: not done
+  reason: workflow not implemented
+  commit: null
+  when: null
+  evidence_required:
+  - AP stop and start timestamps
+  - timestamped WiFi retry observations
+  - supervisor-state history proving no Provisioning fallback
+  - MQTT reconnection evidence
+  - fresh post-recovery publications
+- id: WF-004
+  kind: workflow
+  scenario: standard
+  role: release-gate
+  name: Deliver and confirm a firmware update remotely
+  validates:
+  - AC-4
+  children:
+  - TS-062
+  - TS-065
+  - TS-069
+  - TS-071
+  - TS-075
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - ota-relay
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    current_version: recorded
+    active_slot: recorded
+    mqtt: connected
+  steps:
+  - id: record-baseline
+    action: inspect_ota_state
+  - id: start-meter-traffic
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      run_until_step: confirm-new-image
+      fault: none
+    checkpoint_tests:
+    - TS-069
+  - id: issue-update
+    action: publish_ota_command
+    with:
+      image_url: capability:ota-relay.fixtures.valid_image_url
+    checkpoint_tests:
+    - TS-062
+  - id: observe-update
+    action: observe_for_duration
+    with:
+      duration_s: decision:TDD-002.decision.max_command_to_reboot_s
+      required_observations:
+      - download starts
+      - inactive slot is written
+      - update indication remains visible
+      - meter ingestion continues
+      prohibited_observations:
+      - active image is overwritten
+      - indicator is absent during flash write
+    checkpoint_tests:
+    - TS-065
+    - TS-069
+    - TS-075
+  - id: confirm-new-image
+    action: inspect_ota_state
+    checkpoint_tests:
+    - TS-065
+    - TS-071
+  - id: confirm-service
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: decision:TDD-002.decision.max_reboot_to_mqtt_validation_s
+  - id: confirm-publication
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 60
+  - id: restore
+    action: restore_bench
+  expected: The new image runs from the previously inactive slot, reaches the broker, is marked valid, reports the
+    new version and resumes normal publication.
+  must_not:
+  - the update starts without a command
+  - the old version remains reported after successful validation
+  - physical access is required
+  status: not done
+  reason: workflow not implemented
+  commit: null
+  when: null
+  evidence_required:
+  - original and updated firmware versions
+  - original and updated OTA slots
+  - OTA relay access log
+  - download/write/validation serial log
+  - post-update MQTT session
+  - fresh post-update publication
+- id: WF-005
+  kind: workflow
+  scenario: negative
+  role: release-gate
+  name: Roll back an image that cannot reach the broker
+  validates:
+  - AC-5
+  children:
+  - TS-066
+  - TS-068
+  - TS-071
+  - TS-075
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - ota-relay
+  start_state:
+    device: OPERATIONAL on a known-good image
+    known_good_version: recorded
+    known_good_slot: recorded
+  steps:
+  - id: record-known-good
+    action: inspect_ota_state
+  - id: install-bad-image
+    action: publish_ota_command
+    with:
+      image_url: capability:ota-relay.fixtures.image_that_cannot_reach_broker_url
+    checkpoint_tests:
+    - TS-066
+  - id: observe-first-boot
+    action: inspect_ota_state
+    checkpoint_tests:
+    - TS-066
+    - TS-068
+    - TS-075
+    expect:
+      image_not_validated_for_s: decision:TDD-002.decision.max_reboot_to_mqtt_validation_s
+  - id: trigger-validation-reset
+    action: reset_device
+    checkpoint_tests:
+    - TS-068
+    with:
+      after_bad_image_boot_s: decision:TDD-002.decision.rollback_reset_after_bad_image_boot_s
+  - id: verify-rollback
+    action: inspect_ota_state
+    checkpoint_tests:
+    - TS-066
+    - TS-068
+    - TS-071
+  - id: verify-service
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: decision:TDD-002.decision.max_rollback_mqtt_recovery_s
+  - id: verify-publication
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 60
+  - id: restore
+    action: restore_bench
+  expected: The unvalidated image is abandoned and the previously valid image and slot return to normal broker-connected
+    operation.
+  must_not:
+  - the broken image is marked valid
+  - recovery is inferred only because some firmware is alive
+  - the active slot or running version is left unobserved
+  status: not done
+  reason: workflow not implemented
+  commit: null
+  when: null
+  evidence_required:
+  - known-good version and slot
+  - bad-image version and pending-validation state
+  - reset reason
+  - rollback version and slot
+  - post-rollback MQTT session and fresh publication
+- id: WF-006
+  kind: workflow
+  scenario: standard
+  role: field-acceptance
+  name: Validate the installed real meter
+  validates:
+  - AC-6
+  children:
+  - TS-014
+  - TS-018
+  - TS-020
+  - TS-021
+  - TS-103
+  tier: field
+  needs:
+  - board
+  - real-meter
+  - wifi-ap
+  - mqtt-broker
+  start_state:
+    bench_acceptance: passed
+    device: installed on the real meter
+    meter_display: readable
+  steps:
+  - id: boot-on-meter-power
+    action: boot_device
+    with:
+      timeout_s: 30
+    checkpoint_tests:
+    - TS-018
+  - id: wait-for-network
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:real-meter.parameters.deployment_wifi_ssid
+      expected_bssid: capability:real-meter.parameters.deployment_wifi_bssid
+      timeout_s: 120
+  - id: wait-for-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 120
+  - id: compare-values
+    action: compare_with_real_meter
+    with:
+      tolerance: decision:TDD-003.decision
+    checkpoint_tests:
+    - TS-021
+    - TS-103
+  - id: confirm-publication
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 2
+      timeout_s: 120
+  expected: The installed meter identity and published values agree with the real meter display within the declared
+    tolerance.
+  must_not:
+  - simulator evidence is substituted for real-meter evidence
+  - a partial or stale publication is accepted as the comparison value
+  status: not done
+  reason: needs real-meter — unavailable
+  commit: null
+  when: null
+  evidence_required:
+  - meter identity
+  - timestamped meter-display observations
+  - corresponding published values
+  - comparison calculation using TDD-003
+  - installation and network identity record
+- id: WF-007
+  kind: workflow
+  scenario: standard
+  role: field-acceptance
+  name: Operate for 24 hours on meter power with cabinet WiFi
+  validates:
+  - AC-7
+  children:
+  - TS-021
+  - TS-031
+  - TS-040
+  - TS-042
+  - TS-052
+  - TS-103
+  - TS-110
+  tier: field
+  needs:
+  - board
+  - real-meter
+  - wifi-ap
+  - mqtt-broker
+  start_state:
+    WF-006: successful
+    device: installed and OPERATIONAL
+    fresh_publication: confirmed
+  steps:
+  - id: record-start
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 120
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: observe-installed-operation
+    action: observe_for_duration
+    with:
+      duration_s: 86400
+      required_observations:
+      - meter-powered operation continues
+      - cabinet WiFi remains sufficient for publication
+      - fresh measurements continue
+      - temporary peer interruptions recover without intervention
+      prohibited_observations:
+      - manual reset
+      - unexplained reboot loop
+      - permanent publication loss
+      - Provisioning fallback caused by an outage
+    checkpoint_tests:
+    - TS-031
+    - TS-040
+    - TS-042
+    - TS-052
+    - TS-110
+  - id: record-end
+    action: compare_with_real_meter
+    with:
+      tolerance: decision:TDD-003.decision
+    checkpoint_tests:
+    - TS-021
+    - TS-103
+  expected: The device remains useful for 24 hours on real meter power with cabinet WiFi, publishing fresh measurements
+    without human intervention.
+  must_not:
+  - the observation window is shortened
+  - retained MQTT values are counted as continuous operation
+  - a reboot or outage is ignored because service later returned
+  status: not done
+  reason: needs real-meter — unavailable
+  commit: null
+  when: null
+  evidence_required:
+  - 24-hour observation start and end timestamps
+  - continuous fresh-publication log
+  - reset-reason history
+  - network interruption and recovery log, if any
+  - start and end comparisons with the meter display
+- id: WF-008
+  kind: workflow
+  scenario: negative
+  role: release-gate
+  name: Recover from a broker outage
+  validates:
+  - product-goal:survive-broker-outage
+  children:
+  - TS-028
+  - TS-037
+  - TS-040
+  - TS-045
+  - TS-110
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    wifi: associated with intended BSSID
+    mqtt: connected
+    fresh_publication: confirmed
+  steps:
+  - id: confirm-live-service
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-110
+  - id: remove-broker
+    action: stop_broker
+    with:
+      failure_mode: DROP
+  - id: feed-while-offline
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      cycles: 3
+      identity: '44337811'
+      energy: 12345
+      fault: none
+    checkpoint_tests:
+    - TS-028
+    - TS-037
+  - id: observe-offline
+    action: observe_for_duration
+    with:
+      duration_s: 120
+      required_observations:
+      - meter decoding continues
+      - no measurement queue grows
+      - WiFi association remains
+      prohibited_observations:
+      - device reset
+      - Provisioning starts
+      - offline measurements are replayed later
+    checkpoint_tests:
+    - TS-028
+    - TS-037
+  - id: restore-broker
+    action: start_broker
+  - id: wait-for-session
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-040
+  - id: verify-discovery
+    action: read_discovery_messages
+    with:
+      discovery_prefix: homeassistant
+    checkpoint_tests:
+    - TS-045
+  - id: verify-fresh-state
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 2
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-110
+  - id: restore
+    action: restore_bench
+  expected: Meter ingestion continues while the broker is unavailable. After restoration, a new MQTT session is
+    established, discovery is republished and fresh measurements resume.
+  must_not:
+  - the DUT resets because the broker is unavailable
+  - offline measurement sets are replayed
+  - a retained pre-outage state is accepted as recovery evidence
+  - Provisioning starts
+  evidence_required:
+  - broker DROP and restore timestamps
+  - serial decode observations during outage
+  - evidence that no queue grew or replay occurred
+  - new MQTT-session evidence
+  - republished discovery messages
+  - fresh post-recovery state messages
+  status: not done
+  reason: workflow definition added; implementation and execution follow later
+  commit: null
+  when: null
+- id: WF-009
+  kind: workflow
+  scenario: deviation
+  role: release-gate
+  name: Continue operation through meter silence
+  validates:
+  - product-goal:survive-meter-outage
+  children:
+  - TS-042
+  - TS-047
+  - TS-050
+  - TS-052
+  - TS-110
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    mqtt: connected
+    fresh_measurement: confirmed
+  steps:
+  - id: record-live-baseline
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: silence-meter
+    action: silence_meter
+    with:
+      duration_s: 60
+    checkpoint_tests:
+    - TS-042
+  - id: prove-no-stale-state
+    action: observe_no_publication
+    with:
+      topics:
+      - gplug/<mac>/state
+      duration_s: 60
+      allow_retained_initial_message: false
+    checkpoint_tests:
+    - TS-042
+    - TS-050
+  - id: observe-service
+    action: observe_for_duration
+    with:
+      duration_s: 60
+      required_observations:
+      - WiFi remains associated
+      - MQTT session remains established
+      prohibited_observations:
+      - watchdog reset
+      - stale measurement publication
+      - Provisioning starts
+    checkpoint_tests:
+    - TS-042
+    - TS-047
+  - id: resume-meter
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      cycles: 3
+      identity: '44337811'
+      energy: 12346
+      fault: none
+  - id: prove-recovery
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: restore
+    action: restore_bench
+  expected: Network service remains available during meter silence, no stale measurement is published, and a fresh
+    measurement is published when meter traffic returns.
+  must_not:
+  - the DUT resets
+  - the previous measurement is republished
+  - WiFi or MQTT is lost because meter data is absent
+  evidence_required:
+  - fresh pre-silence state message
+  - simulator silence confirmation
+  - complete no-publication observation window
+  - WiFi and MQTT continuity evidence
+  - fresh post-silence state message
+  - reset-reason history
+  status: not done
+  reason: workflow definition added; implementation and execution follow later
+  commit: null
+  when: null
+- id: WF-010
+  kind: workflow
+  scenario: standard
+  role: release-gate
+  name: Smoke-test the production firmware image
+  validates:
+  - release-seam:production-image
+  children:
+  - TS-094
+  - TS-095
+  - TS-096
+  - TS-097
+  - TS-098
+  - TS-099
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  start_state:
+    production_artifact: built and identified
+    meter_simulator: disconnected or silent
+    configuration: valid and stored
+    broker: fresh, with retained production discovery cleared
+  steps:
+  - id: flash-production
+    action: flash_firmware_variant
+    with:
+      variant: production
+      firmware_artifact: release-candidate production image
+      expected_version: release-candidate version
+    checkpoint_tests:
+    - TS-094
+    - TS-095
+    - TS-096
+    - TS-097
+  - id: wait-for-wifi
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:wifi-ap.parameters.ssid
+      expected_bssid: capability:wifi-ap.parameters.bssid
+      timeout_s: 60
+  - id: wait-for-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+  - id: prove-no-synthetic-state
+    action: observe_no_publication
+    with:
+      topics: decision:TDD-004.decision.prohibited_fresh_topics
+      duration_s: decision:TDD-004.decision.observation_window_s
+      allow_retained_initial_message: false
+    checkpoint_tests:
+    - TS-096
+    - TS-097
+  - id: inspect-running-image
+    action: inspect_ota_state
+  - id: restore
+    action: restore_bench
+  expected: The production image boots, joins the intended WiFi network and MQTT broker, reports the correct version,
+    and produces no simulated meter or production-entity data without meter input.
+  must_not:
+  - capture data exists in the production image
+  - the image reports a simulated variant
+  - synthetic measurements or discovery entities are published
+  evidence_required:
+  - production artifact hash and version
+  - flash and boot log
+  - associated SSID and BSSID
+  - MQTT client-session evidence
+  - complete no-publication observation window
+  - running variant and version observation
+  status: not done
+  reason: workflow definition added and TDD-004 decided; implementation and execution follow later
+  commit: null
+  when: null
+- id: WF-011
+  kind: workflow
+  scenario: deviation
+  role: release-gate
+  name: Reconfigure an installed device
+  validates:
+  - operational-procedure:reconfigure
+  children:
+  - TS-035
+  - TS-036
+  - TS-058
+  - TS-031
+  - TS-040
+  tier: bench
+  needs:
+  - board
+  - physical-button
+  - wifi-ap
+  - mqtt-broker
+  start_state:
+    device: OPERATIONAL
+    old_configuration: recorded
+    replacement_configuration: available
+  steps:
+  - id: enter-provisioning
+    action: hold_device_button
+    with:
+      duration_ms: decision:TDD-005.decision.runtime_hold_ms
+      method: decision:TDD-005.decision.release_workflow_method
+    expect:
+      softap_visible_within_s: decision:TDD-005.decision.softap_timeout_s
+    checkpoint_tests:
+    - TS-035
+  - id: open-portal
+    action: request_configuration_page
+    with:
+      hostname: example.com
+  - id: submit-replacement
+    action: submit_configuration
+    with:
+      wifi_ssid: replacement:wifi_ssid
+      wifi_passphrase: replacement:wifi_passphrase
+      broker_host: replacement:broker_host
+      broker_port: replacement:broker_port
+      mqtt_username: replacement:mqtt_username
+      mqtt_password: replacement:mqtt_password
+      dlms_key: replacement:dlms_key
+  - id: join-replacement-ap
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: replacement:wifi_ssid
+      expected_bssid: replacement:wifi_bssid
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-031
+  - id: join-replacement-broker
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-040
+  - id: verify-new-service
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+  - id: verify-persistence
+    action: reset_device
+  - id: verify-reconnect-after-reset
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: replacement:wifi_ssid
+      expected_bssid: replacement:wifi_bssid
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-058
+    - TS-031
+  - id: restore
+    action: restore_bench
+  expected: A running device enters Provisioning through the physical button, accepts replacement configuration,
+    becomes OPERATIONAL on the replacement network and retains that configuration after reset.
+  must_not:
+  - the button causes serial-download mode
+  - the prior configuration is lost before replacement values are accepted
+  - physical disassembly or reflashing is required
+  evidence_required:
+  - physical button actuation timing
+  - supervisor transition and SoftAP timing
+  - replacement portal submission
+  - replacement SSID and BSSID association
+  - replacement broker session
+  - fresh publication after reconfiguration
+  - reconnection after reset
+  status: not done
+  reason: workflow definition complete; physical execution follows later
+  commit: null
+  when: null
+- id: WF-012
+  kind: workflow
+  scenario: negative
+  role: release-gate
+  name: Recover useful operation after a watchdog reset
+  validates:
+  - product-goal:recover-from-hang
+  children:
+  - TS-081
+  - TS-082
+  - TS-040
+  - TS-052
+  - TS-110
+  tier: bench
+  needs:
+  - board
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL
+    configuration: stored
+    fresh_publication: confirmed
+  steps:
+  - id: confirm-live-service
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: stall-task
+    action: stall_watchdog_task
+    with:
+      task: one watchdog-subscribed task
+      stall_duration_s: 10
+    checkpoint_tests:
+    - TS-081
+    - TS-082
+  - id: observe-reset
+    action: boot_device
+    with:
+      timeout_s: 15
+    expect:
+      reset_reason: task-watchdog
+      reset_within_s: 5
+    checkpoint_tests:
+    - TS-081
+    - TS-082
+  - id: recover-wifi
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:wifi-ap.parameters.ssid
+      expected_bssid: capability:wifi-ap.parameters.bssid
+      timeout_s: 60
+  - id: recover-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-040
+  - id: feed-after-reset
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      cycles: 3
+      identity: '44337811'
+      energy: 12347
+      fault: none
+  - id: prove-useful-recovery
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 1
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-052
+    - TS-110
+  - id: restore
+    action: restore_bench
+  expected: The watchdog resets the stalled device within the configured period. Stored configuration survives,
+    WiFi and MQTT recover automatically, and fresh meter publication resumes.
+  must_not:
+  - the reset reason is ambiguous or unavailable
+  - manual reset or reconfiguration is required
+  - the DUT returns only to a booted but non-publishing state
+  evidence_required:
+  - pre-stall fresh publication
+  - stall start timestamp
+  - watchdog reset timestamp and reason
+  - post-reset stored-configuration observation
+  - WiFi and MQTT recovery timestamps
+  - fresh post-reset publication
+  status: not done
+  reason: workflow definition added; implementation and execution follow later
+  commit: null
+  when: null
+- id: WF-013
+  kind: workflow
+  scenario: standard
+  role: release-gate
+  name: Resume normal operation after power restoration
+  validates:
+  - product-goal:normal-unattended-startup
+  children:
+  - TS-018
+  - TS-031
+  - TS-040
+  - TS-045
+  - TS-052
+  - TS-057
+  - TS-108
+  - TS-109
+  - TS-110
+  - TS-111
+  tier: bench
+  needs:
+  - board
+  - power-cycle
+  - wifi-ap
+  - mqtt-broker
+  - mbus-sim
+  start_state:
+    device: OPERATIONAL with valid configuration stored
+    access_point: available
+    broker: fresh and available
+    meter_simulator: mode 2, continuous valid cycles
+  steps:
+  - id: confirm-baseline
+    action: confirm_bench_ready
+    with:
+      required_capabilities:
+      - board
+      - power-cycle
+      - wifi-ap
+      - mqtt-broker
+      - mbus-sim
+  - id: start-meter-traffic
+    action: feed_meter_cycles
+    with:
+      mode: 2
+      run_until_step: prove-live-publication
+      identity: '44337811'
+      energy: 12345
+      fault: none
+  - id: remove-and-restore-power
+    action: power_cycle_device
+    checkpoint_tests:
+    - TS-057
+  - id: observe-boot
+    action: boot_device
+    with:
+      timeout_s: 15
+    expect:
+      supervisor_state: CONNECTING
+      provisioning_absent: true
+    checkpoint_tests:
+    - TS-018
+    - TS-031
+  - id: join-configured-network
+    action: wait_for_wifi_association
+    with:
+      expected_ssid: capability:wifi-ap.parameters.ssid
+      expected_bssid: capability:wifi-ap.parameters.bssid
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-031
+  - id: establish-mqtt
+    action: wait_for_mqtt_session
+    with:
+      timeout_s: 60
+    checkpoint_tests:
+    - TS-040
+  - id: prove-discovery
+    action: read_discovery_messages
+    with:
+      discovery_prefix: homeassistant
+    checkpoint_tests:
+    - TS-045
+    - TS-109
+    - TS-111
+  - id: prove-live-publication
+    action: observe_fresh_publication
+    with:
+      topic: gplug/<mac>/state
+      minimum_messages: 2
+      timeout_s: 20
+    checkpoint_tests:
+    - TS-052
+    - TS-108
+    - TS-109
+    - TS-110
+  - id: restore
+    action: restore_bench
+  expected: After actual supply power is restored, the device reads its stored configuration, skips Provisioning,
+    rejoins the configured WiFi and MQTT broker, identifies the meter, republishes discovery and resumes fresh measurement
+    publication without intervention.
+  must_not:
+  - Provisioning starts
+  - stored configuration is lost
+  - manual reset or configuration is required
+  - a retained pre-power-loss message is accepted as live recovery
+  - the device remains booted but non-publishing
+  evidence_required:
+  - power removal and restoration timestamps
+  - boot and reset-reason log
+  - absence of Provisioning
+  - configured SSID and BSSID association
+  - new MQTT session
+  - meter identity and discovery messages
+  - at least two fresh state publications
+  status: not done
+  reason: workflow definition added; implementation and execution follow later
+  commit: null
+  when: null
+test_design_decisions:
+- id: TDD-001
+  status: decided
+  subject: Definition of a simulated day
+  needed_by:
+  - WF-002
+  decision:
+    sequence:
+      mode: 2
+      cycles: 25
+      cadence_s: 5
+      initial_energy_wh: 20000000
+      increment_per_cycle_wh: 1000
+      final_energy_wh: 20024000
+    expected_delta_kwh: 24.0
+    publication_loss_allowed: 0
+    oracle: All 25 publications arrive. The ordered published values match the generated sequence exactly after unit
+      conversion, and the observed accumulated delta is 24.000 kWh. Each energy entity's discovery payload carries
+      device_class energy, state_class total_increasing and unit kWh.
+  rationale: Twenty-five accelerated samples represent hour 0 through hour 24. The starting counter is above the
+    exact-float boundary and therefore also exercises integer precision without requiring a real 24-hour run.
+    Revised 2026-08-06 - the oracle read "accepted by Home Assistant" and carried a 600 s statistics timeout, which
+    made the decision depend on a consumer that FSD 22.0 puts outside the system under test. What the Energy Dashboard
+    actually requires of us is the three payload keys, so those are asserted directly and the timeout is gone.
+- id: TDD-002
+  status: decided
+  subject: Maximum duration of a valid OTA workflow
+  needed_by:
+  - WF-004
+  - WF-005
+  decision:
+    download_start_timeout_s: 5
+    max_command_to_reboot_s: 300
+    max_reboot_to_mqtt_validation_s: 60
+    max_successful_workflow_s: 360
+    rollback_reset_after_bad_image_boot_s: 65
+    max_rollback_boot_s: 30
+    max_rollback_mqtt_recovery_s: 60
+  rationale: Five minutes is ample for a local firmware download and flash write, while the 60-second post-boot
+    limit follows the MQTT recovery contract. The rollback reset occurs only after the full validation window has
+    elapsed.
+- id: TDD-003
+  status: decided
+  subject: Real-meter comparison tolerance
+  needed_by:
+  - WF-006
+  - WF-007
+  decision:
+    paired_observations: 3
+    minimum_interval_between_pairs_s: 60
+    maximum_display_to_publication_skew_s: 5
+    load_condition: stable during each comparison window
+    identity: exact match
+    energy_tolerance: one least-significant digit of the meter display after unit conversion
+    power_tolerance: maximum of one display least-significant digit, 10 W, or 2 percent of the displayed value
+  rationale: Energy is cumulative and should match to the meter display resolution. Instantaneous power needs a
+    small allowance for display rounding and sampling skew, while three separated pairs prevent a one-off coincidence.
+- id: TDD-004
+  status: decided
+  subject: Production-image smoke-test observation window
+  needed_by:
+  - WF-010
+  decision:
+    fresh_broker_required: true
+    meter_input: silent or physically disconnected
+    observation_window_s: 30
+    prohibited_fresh_topics:
+    - gplug/<mac>/state
+    - homeassistant/sensor/+/config
+    allowed_publications:
+    - availability or status
+    - version and diagnostics that contain no meter values
+  rationale: Thirty seconds covers several normal five-second meter publication opportunities without turning a
+    smoke test into a soak test.
+- id: TDD-005
+  status: decided
+  subject: Physical and repeatable reconfiguration test method
+  needed_by:
+  - WF-011
+  decision:
+    release_workflow_method: manual operation of the actual device button
+    runtime_hold_ms: 5000
+    softap_timeout_s: 5
+    boot_strap_check: Hold the actual button through reset once; the device must boot normally and must not enter
+      serial-download mode.
+    repeatable_regression_method: A firmware test seam may inject the logical five-second event for routine regression,
+      but it does not replace the physical release test.
+    physical_test_frequency: first product release and after a hardware, GPIO or button-handling change
+  rationale: One physical test proves the real GPIO path. A logical seam is useful for repetition but cannot prove
+    wiring or boot-strap behaviour.
+release_gates:
+  firmware_release:
+    status: proposed
+    requires:
+      atomic_policy:
+      - every applicable Must and Should requirement has at least one atomic test
+      - every release-applicable atomic test has a current successful result
+      - no failed or stale release-applicable test remains
+      workflows:
+      - WF-001
+      - WF-002
+      - WF-003
+      - WF-004
+      - WF-005
+      - WF-008
+      - WF-009
+      - WF-010
+      - WF-011
+      - WF-012
+      - WF-013
+  first_product_release:
+    status: proposed
+    inherits: firmware_release
+    additionally_requires:
+      workflows:
+      - WF-006
+      - WF-007
+      field_decisions:
+      - TDD-003
+  subsequent_firmware_release:
+    status: proposed
+    inherits: firmware_release
+    field_evidence_policy: WF-006 and WF-007 may be carried forward only when an impact analysis confirms that meter
+      handling, hardware, power, WiFi and timing behaviour are unchanged.

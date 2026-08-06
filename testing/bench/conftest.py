@@ -47,10 +47,16 @@ def pytest_addoption(parser):
 # Ordered by what a test proves, not by what it costs. A failure early makes
 # everything after it unreadable, and that matters more than minutes.
 #
+# These markers are the run order. The plan's `scenario` field is what a case
+# IS, and the two map as: standard splits across provisioning and
+# bread-and-butter, deviation is its own phase, and negative and security share
+# the exception phase. Nothing is classified twice — a plan entry carries a
+# scenario, a test here carries a marker (docs/Harness/standards/testing.md).
+#
 #   1  host          offline, no rig — run separately, before any of this
 #   2  bread-and-butter   the device does its job: telegram in, measurement
-#                         published, entity discovered. Nothing else is worth
-#                         reading until this passes.
+#                         published, discovery published to the broker. Nothing
+#                         else is worth reading until this passes.
 #   3  deviation      still normal operation, just not the simplest case — both
 #                     serial lengths, waking mid-transmission, a reset. The
 #                     interface spec is explicit that mid-burst resynchronisation

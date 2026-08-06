@@ -268,6 +268,7 @@ closed.
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
 | DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-MTR-11); decryption itself is out of scope |
 | Bad firmware reaches the device | Low | Physical visit required | Rollback on failure to reach the broker (FR-OTA-05); manual trigger only (FR-OTA-02) |
+| Discovery payloads are correct but Home Assistant still does not render the entities | Low | Found at the first installation, not on the bench | **Accepted.** Verification stops at the broker (§22.0), so nothing proves the integration's own behaviour. The payload keys carrying that behaviour are specified exactly (FR-HA-01..05, NFR-OTA-01) and asserted against the published message, which is the part that is ours to get wrong |
 
 ### 4.2 Assumptions
 
@@ -494,7 +495,7 @@ without configuration on the Home Assistant side. The peer is the MQTT broker.
 | **FR-HA-01** | Must | The device shall publish a retained MQTT discovery configuration for each entity of Appendix B. | Fresh broker; connect the DUT; feed one cycle | One retained config per Appendix B entity present in the cycle | Configs for absent registers | `[user]` D-H1 |
 | **FR-HA-02** | Must | The device shall derive each entity's `unique_id` from the meter serial. | Note `unique_id`s; reflash with a cleared NVS; reconnect | Identical `unique_id`s | IDs change across reflash | `[user]` D-H3 |
 | **FR-HA-03** | Must | The device shall defer publishing discovery configurations until a meter serial has been decoded. | Connect with no meter data | No discovery topics | Discovery published with a placeholder serial | `[derived]` D-H3 |
-| **FR-HA-04** | Must | The device shall publish energy entities with `device_class: energy` and `state_class: total_increasing`, and power entities with `device_class: power` and `state_class: measurement`. | Inspect discovery payloads in Home Assistant | Energy entities accepted by the Energy Dashboard | An energy entity rejected as unsuitable | `[user]` D-H2 |
+| **FR-HA-04** | Must | The device shall publish energy entities with `device_class: energy` and `state_class: total_increasing`, and power entities with `device_class: power` and `state_class: measurement`. | Subscribe to the discovery prefix at the broker; feed one cycle | Every energy entity's payload carries exactly those two keys with those two values, and every power entity carries its pair; units are `kWh` and `kW` per Appendix B | A missing `state_class`, `measurement` on an energy entity, or a unit that disagrees with Appendix B | `[user]` D-H2 |
 | **FR-HA-05** | Must | The device shall publish only measurements present in the decoded cycle. | Feed a cycle missing `U2` | No `U2` in the payload | `U2` present as 0 or a stale value | `[user]` D-D3 |
 | **FR-HA-06** | Must | The device shall register a last-will message marking itself unavailable, and publish availability on connection. | Cut DUT power while connected | Broker marks it unavailable within the keepalive window | Entity stays "available" indefinitely | `[pack:esp32]` |
 | **FR-HA-07** | Must | The device shall not retain measurement state messages. | Subscribe fresh after the DUT is offline | No measurement state delivered | A retained stale reading delivered | `[derived]` |
@@ -590,7 +591,7 @@ served over HTTPS.
 | **FR-OTA-07** | Must | On reset before an image is marked valid, the bootloader shall revert to the previously valid image. | Update, then reset before validation completes | The previously valid image runs | The unvalidated image boots again | `[user]` D-U3 |
 | **FR-OTA-08** | Must | The device shall continue decoding meter frames during a download. | Feed meter cycles throughout a download | Decoding continues | Ingestion stalls for the download | `[derived]` FR-SUP-08 |
 | **FR-OTA-09** | Must | The device shall abort a download on loss of WiFi and discard the partial image. | Disable the access point mid-download | Download aborted, partial image discarded | Partial image marked bootable | `[derived]` |
-| **NFR-OTA-01** | Must | The device shall report the running firmware version in its Home Assistant device information. | Read the device entry in Home Assistant after a session is established | The version shown matches the running firmware's version string | A blank, stale, or build-time-only version | `[user]` D-B5 |
+| **NFR-OTA-01** | Must | The device shall report the running firmware version in the `device` block of its discovery payloads. | Read a retained discovery payload at the broker after a session is established | `device.sw_version` matches the running firmware's version string | A blank, stale, or build-time-only version | `[user]` D-B5 |
 
 FR-OTA-05 and FR-OTA-06 are stated separately because they fail separately. The
 first is the bar; the second forbids raising it. An image that boots, joins WiFi
@@ -854,7 +855,7 @@ Which tests cover these requirements, and what each produced, is in
 | **FR-BLD-03** | Must | The simulated build shall be selected at compile time. | Inspect the production binary and the variant-selection mechanism | Selection is a compile-time option; the production binary contains no capture data | Any runtime path that enables simulated data | `[user]` D-T2/T3 |
 | **FR-BLD-04** | Must | The production build shall contain no capability to generate measurement data. | Search the production binary for the embedded capture data | Absent | Any capture data present | `[user]` D-T3 |
 | **FR-BLD-05** | Must | The simulated build's version string shall carry a `-sim` suffix. | Build the simulated variant | The version string carries the `-sim` suffix | A simulated build indistinguishable from production | `[user]` D-T4 |
-| **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | Run the simulated build against a Home Assistant instance | Entities appear only under the test prefix | Production entities created or overwritten | `[user]` D-T4 |
+| **FR-BLD-06** | Must | The simulated build shall publish under a discovery prefix distinct from the production build. | Run the simulated build against the bench broker while subscribed to `#` | Discovery topics appear only under the test prefix, and none under `homeassistant/` | A retained config published under the production prefix | `[user]` D-T4 |
 | **FR-BLD-07** | Must | Every push shall build the firmware and run the host tests. | Inspect `.github/workflows/` | Both workflows trigger on `push`; the host job runs `ctest` | A workflow that runs only on a tag, or a build that skips the tests | `[user]` D-B1 |
 | **FR-BLD-08** | Must | Firmware shall be published only from a tagged commit. | Push to a branch without a tag | No release asset produced | A downloadable binary published | `[user]` D-B2 |
 
@@ -884,7 +885,7 @@ A reading path through the chapters above; component detail is not restated.
 |---|---|
 | **First flash** | Partition layout Appendix C · flash over USB |
 | **Provision** | §9 portal · §17 configuration catalogue · §11 blue steady confirms |
-| **Verify** | §8 discovery topics appear · Energy Dashboard accepts the entities (§8.5) |
+| **Verify** | §8 discovery topics appear at the broker · state publications follow each cycle (§8.3) |
 | **Operate** | §11 indicator states · §19.1 degraded modes |
 | **Reconfigure** | §6 button hold 5 s → §9 portal → returns to §6 `CONNECTING` |
 | **Update** | §10 publish URL to the command topic · §11 update pattern · §10.4 verify version |
@@ -931,6 +932,27 @@ confirm the meter gives what we assumed.
 those properties; they are checked by CI or review, and only FR-BLD-04 and
 FR-BLD-08 carry it.
 
+**The verification boundary is the MQTT broker, not Home Assistant.** Everything
+this device does is a message: a retained discovery configuration per entity, a
+state publication per cycle, an availability topic, a last will. Those are the
+whole of its externally observable behaviour, and every one of them can be read
+from the broker with a subscription.
+
+Home Assistant is therefore a *consumer* of the contract, not part of the system
+under test. Testing through it would prove the device and the integration and the
+recipe registry together, so a failure could not be attributed; it would make the
+suite depend on a service that upgrades on its own schedule; and — because
+discovery is retained — every bench run would create real devices in a live
+instance that survive restarts until someone clears each config topic by hand.
+
+What that costs is a genuine claim: nothing here proves Home Assistant renders
+the entities or that the Energy Dashboard accepts them. Those depend on the
+discovery schema being right, so the requirements that carry the schema
+(FR-HA-04 above all) state the exact keys and values rather than the downstream
+effect, and are verified against the published payload. The first installation is
+where the end-to-end claim is actually established, and that is recorded as an
+accepted risk in §4 rather than as a test that could not fail.
+
 Which tests cover which requirement, at which tier, with what equipment and what
 each produced, is in [`testing/test-plan.yaml`](../../testing/test-plan.yaml).
 Nothing about coverage is maintained here — a hand-kept column is stale the
@@ -940,8 +962,8 @@ moment a test changes.
 
 | ID | Scenario | Tier |
 |---|---|---|
-| **AC-1** | A fresh device is provisioned from a phone and its entities appear in Home Assistant with no configuration there | bench |
-| **AC-2** | Energy entities are accepted by the Energy Dashboard and accumulate correctly across a simulated day | bench |
+| **AC-1** | A fresh device is provisioned from a phone, and a retained discovery configuration for every entity present in the cycle, followed by live state publications, appears at the broker | bench |
+| **AC-2** | The energy entities' discovery payloads carry the classes the Energy Dashboard requires, and their state values accumulate correctly across a simulated day | bench |
 | **AC-3** | A 10-minute access-point outage is survived with no intervention and no AP-mode fallback | bench |
 | **AC-4** | A firmware update is delivered, applied and confirmed entirely over the network | bench |
 | **AC-5** | A firmware that cannot reach the broker is reverted automatically | bench |
@@ -951,6 +973,11 @@ moment a test changes.
 AC-6 is the only scenario that can invalidate Phase 1's conclusions, and AC-7 is
 the only one that can invalidate the deployment. Both are field-tier by
 necessity, and both are why Phase 3 exists as a phase rather than a formality.
+
+AC-1 and AC-2 are stated at the broker for the reason given in §22.0. They were
+once written as "entities appear in Home Assistant" and "the Energy Dashboard
+accepts them", which named an outcome no bench observation could establish
+without a Home Assistant instance in the loop.
 
 ### 22.2 Traceability
 
@@ -967,10 +994,16 @@ A **requirement** is met when every test that verifies it is successful —
 including the check that its *must not* did not happen. A passing test that never
 looked for the prohibited outcome establishes less than it appears to.
 
-At revision 0.2.0: **86 requirements, 59 carrying a contract, 10 tests
-implemented and passing, all at host tier.** No target or bench test exists yet,
-so nothing that depends on a wire or a peer is verified — including the meter
-interface, which is where the device is currently known to be failing.
+The plan carries two kinds of case and they are never summed. An **atomic** case
+verifies one contract and answers *which specified behaviour failed*; a
+**workflow** is one continuous execution answering *does the product do its
+job*. A workflow's status is not derived from its children — all children green
+with the workflow red is an integration defect, and that is a result worth being
+able to state. Every scenario in §22.1 has a workflow.
+
+The current counts are `tools/report.py`, which reads the plan; a number written
+here would be a hand-kept coverage column by another name, and this section
+exists to say there is not one.
 
 ---
 
