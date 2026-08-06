@@ -61,7 +61,7 @@ STATUS_WILDCARD = "gplug/+/status"
 # requiring all of Appendix B here would fail on a rig characteristic. What must
 # hold is the other direction: nothing may be published that the cycle did not
 # contain (FR-HA-05).
-EXPECTED_FROM_MODE_2 = {"Ei", "Pi"}
+EXPECTED_FROM_MODE_2 = {"active_power_plus", "active_energy_plus"}
 CLASSES = {
     "energy": ("total_increasing", "kWh"),
     "power": ("measurement", "kW"),
@@ -93,7 +93,10 @@ def _payloads_by_label(configs):
     """Discovery configs keyed by the entity label at the end of the topic."""
     out = {}
     for _t, topic, payload, _r in configs:
-        label = topic.split("/")[-2].split("_")[-1]
+        # `44337811_active_energy_plus` -> `active_energy_plus`. Splitting on the
+        # LAST underscore yields "plus", which matches no entity and made every
+        # payload look like it belonged to the same one.
+        label = topic.split("/")[-2].split("_", 1)[1]
         try:
             out[label] = json.loads(payload)
         except json.JSONDecodeError:
@@ -288,9 +291,24 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
             f"no discovery config in {DISCOVERY_TIMEOUT}s after the meter identified "
             "itself. The device decodes and connects, and a consumer sees nothing."
         )
-        assert all(retain for _t, _top, _p, retain in configs), (
-            "a discovery config was published without the retain flag, so anything "
-            "subscribing later learns no entities at all"
+        # Retention cannot be read off these messages. MQTT sets the retain flag
+        # only on messages the broker replays from its store at subscribe time;
+        # a live delivery to an already-subscribed client shows retain=False no
+        # matter what the publisher asked for. So the only way to prove the
+        # configs will still be there for a consumer that arrives later is to BE
+        # a consumer that arrives later.
+        late = MqttWatch(BENCH_HOST, [DISCOVERY_WILDCARD])
+        try:
+            time.sleep(8)
+            replayed = [m for m in late.messages if m[3]]
+        finally:
+            late.close()
+        evidence["retained_on_fresh_subscribe"] = [m[1] for m in replayed]
+        print(f"  a fresh subscriber is sent {len(replayed)} retained config(s)")
+        assert replayed, (
+            "a subscriber connecting now is sent no discovery configs at all, so "
+            "the entities exist only for whoever happened to be listening when "
+            "they were published once"
         )
 
         # ── 8. the payloads carry what a consumer needs ─────────────────────
