@@ -208,9 +208,25 @@ def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     """
     sim.command("fault fcs 2")
     dut.drain()
-    published = [line for line in dut.lines(seconds=30) if "published" in line and "state" in line]
-    print(f"\n  publishes during the corrupted cycle: {len(published)}")
-    assert not published, f"a frame with a bad checksum reached the broker: {published}"
+    lines = dut.lines(seconds=30)
+    cycles = [l for l in lines if "cycle:" in l]
+    published = [l for l in lines if "published" in l and "state" in l]
+    print(f"\n  {len(cycles)} cycle(s), {len(published)} publish(es)")
+
+    # The directive corrupts ONE telegram and then clears itself, so the good
+    # cycles either side of it publish exactly as they should. Asserting that
+    # nothing at all was published across the window therefore fails on correct
+    # behaviour — which is what it did on 2026-08-06, reporting two legitimate
+    # publishes as a corrupted frame reaching the broker. What the requirement
+    # actually forbids is values coming OUT of the corrupted cycle, so the
+    # oracle is that at least one cycle in the window produced no publication.
+    assert cycles, "no cycle at all in 30 s — the meter link is silent"
+    assert len(published) < len(cycles), (
+        f"every one of {len(cycles)} cycles published, so the corrupted frame "
+        "produced values too. A decoder that emits from a bad-checksum frame "
+        "makes a message that parses and graphs, and nothing downstream can "
+        "tell it is wrong."
+    )
 
 
 @pytest.mark.parametrize("directive,expect", [

@@ -161,6 +161,7 @@ class Dut:
 
     def __init__(self, wb):
         self.wb = wb
+        self._stash = []      # lines captured while a reset was settling
 
     def drain(self):
         """Discard buffered serial output.
@@ -226,7 +227,11 @@ class Dut:
         """
         rx = re.compile(pattern)
         deadline = time.monotonic() + seconds
-        seen = []
+        seen = list(self._stash)
+        self._stash = []
+        for line in seen:
+            if rx.search(line):
+                return line
         while time.monotonic() < deadline:
             try:
                 result = self.wb.serial_monitor(DUT, timeout=POLL_SECONDS)
@@ -255,6 +260,7 @@ class Dut:
         were dead, while a hard reset over the same cable printed normally.
         """
         self.wb.serial_reset(DUT)
+        self._stash = []
         if not settle:
             return
         deadline = time.monotonic() + 30
@@ -266,8 +272,17 @@ class Dut:
             if slot.get("devnode") and slot.get("state") in ("idle", "monitoring"):
                 break
             time.sleep(1)
-        # The slot reports ready before the CDC is actually carrying data.
-        time.sleep(6)
+        # The slot reports ready before the CDC is actually carrying data. Read
+        # during the settle rather than sleeping through it: the firmware repeats
+        # its reset reason once the network is up, and a bare sleep here is
+        # long enough to miss that line entirely — TS-084 failed on exactly that,
+        # waiting 60 s for a line printed while this function was asleep.
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            try:
+                self._stash += self.wb.serial_monitor(DUT, timeout=2).get("output") or []
+            except Exception:
+                time.sleep(1)
 
     def boot_banner(self, seconds=20):
         """Reset and return the identifying banner, so the running image is known."""
@@ -302,6 +317,7 @@ class Sim:
         # and this fixture is session-scoped — so failing at open errors every
         # test that touches the simulator, all of them reporting a serial
         # problem rather than the one-second race that caused it.
+        self._host, self._port_no = host, port
         last = None
         for attempt in range(attempts):
             try:
@@ -317,12 +333,43 @@ class Sim:
             "Another client is probably attached — the proxy takes one."
         )
 
-    def command(self, text, settle=0.6):
-        self.port.reset_input_buffer()
-        self.port.write((text + "\r\n").encode())
-        self.port.flush()
-        time.sleep(settle)
-        return self.port.read(4000).decode("utf-8", "replace")
+    def command(self, text, settle=0.6, retries=2):
+        """Send a console command, reopening the port if it has died.
+
+        The RFC2217 link drops under a long run — measured on 2026-08-06, it
+        failed 20 minutes in with `timeout while waiting for option 'purge'` and
+        then `BrokenPipeError`, and because this connection is session-scoped
+        every later test that touched the simulator errored in setup. Five did.
+        None of those errors said anything about the device.
+        """
+        for attempt in range(retries + 1):
+            try:
+                self.port.reset_input_buffer()
+                self.port.write((text + "\r\n").encode())
+                self.port.flush()
+                time.sleep(settle)
+                return self.port.read(4000).decode("utf-8", "replace")
+            except Exception as e:      # noqa: BLE001 — any link failure is worth reopening
+                if attempt == retries:
+                    pytest.fail(f"simulator console failed after {retries} reopen(s): {e}")
+                print(f"\n  simulator console dropped ({e}) — reopening")
+                self._reopen()
+
+    def _reopen(self):
+        import serial
+        try:
+            self.port.close()
+        except Exception:
+            pass
+        time.sleep(2)
+        for _ in range(5):
+            try:
+                self.port = serial.serial_for_url(
+                    f"rfc2217://{self._host}:{self._port_no}",
+                    baudrate=self.CONSOLE_BAUD, timeout=2)
+                return
+            except Exception:
+                time.sleep(2)
 
     def status(self):
         """The `status` line as a dict of its key=value fields."""

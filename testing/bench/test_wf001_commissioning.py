@@ -254,7 +254,12 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # ── 6. a broker session, and no discovery while the meter is anonymous ─
         wb.test_step("TS-045", "discovery deferral", f"{DEFERRAL_WINDOW}s with no identity")
         step("broker session", "meter still on identity none")
-        dut.await_line(r"mqtt.*(connected|session)", seconds=SESSION_TIMEOUT)
+        # `broker=up` in the diag line, because that is what the firmware
+        # actually prints. There is no "mqtt connected" message: net.cpp logs
+        # only on error, and the session state reaches the console through the
+        # periodic diag line. Waiting 90 s for a phrase the device never emits
+        # is how this step failed while the board sat there publishing.
+        dut.await_line(r"diag:.*broker=up", seconds=SESSION_TIMEOUT)
 
         mark = watch.mark()
         time.sleep(DEFERRAL_WINDOW)
