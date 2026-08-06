@@ -40,6 +40,7 @@ import pytest
 
 from conftest import (
     BENCH_HOST, BENCH_PASS, BENCH_SSID, BROKER_URI, MqttWatch,
+    wait_until_connected,
 )
 from test_provisioning import (
     FORM_HEADERS, PORTAL_ADDR, derived_passphrase, ensure_provisioned, get_page,
@@ -216,22 +217,19 @@ def test_wf001_commission_a_factory_new_device(wb, dut, sim, broker, unprovision
         # corrupted character in it. The station list is better evidence anyway:
         # a device that appears on OUR radio has demonstrably joined OUR network,
         # which is the thing the BSSID check was a proxy for.
-        deadline = time.monotonic() + JOIN_TIMEOUT
-        stations = []
-        while time.monotonic() < deadline:
-            stations = (wb.ap_status() or {}).get("stations") or []
-            if stations:
-                break
-            time.sleep(3)
-        evidence["stations"] = stations
-        assert stations, (
+        connected, how = wait_until_connected(wb, dut, seconds=JOIN_TIMEOUT + 30)
+        evidence["connected"] = how
+        stations = how.get("stations") or []
+        assert connected, (
             f"no station joined {BENCH_SSID} within {JOIN_TIMEOUT}s. The device "
             "may be associating with another access point of the same name, or "
             "failing to get a lease — check the bench's own `iw dev wlan0 "
             "station dump`, because ap_status has been seen to lag it."
         )
-        dut_mac = stations[0]["mac"]
-        print(f"  station {dut_mac} at {stations[0].get('ip')} on {BENCH_SSID}")
+        if stations:
+            print(f"  station {stations[0]['mac']} at {stations[0].get('ip')} on {BENCH_SSID}")
+        else:
+            print(f"  {how.get('diag')}")
 
         # The BSSID line if it is still in the buffer — recorded, not required.
         for line in dut.lines(seconds=5):

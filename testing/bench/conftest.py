@@ -653,6 +653,38 @@ class MqttWatch:
             pass
 
 
+def wait_until_connected(wb, dut, seconds=120):
+    """Wait until the device is demonstrably on THIS bench's network.
+
+    Two independent proofs, either of which is sufficient, because each fails
+    for reasons that have nothing to do with the device:
+
+    * a station in this AP's list — evidence from the peer, but `ap_status` has
+      been measured lagging `iw dev wlan0 station dump` by up to twenty seconds;
+    * `state=operational ... broker=up` from the device — and this one is
+      stronger than it looks, because the broker lives on the bench LAN and is
+      reachable only by routing through the bench AP. A device that reports the
+      broker up has necessarily joined this network.
+
+    What this deliberately does NOT do is wait for `wifi:connected with ...
+    bssid = ...`. That line is printed once, early, and is routinely gone before
+    a test starts watching — TS-057 and WF-001 each failed on it while the board
+    sat there publishing measurements. The BSSID still gets checked when the
+    line is in the buffer; its absence is not evidence of anything.
+
+    Returns (connected, how) so the caller can record which proof it got.
+    """
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        stations = (wb.ap_status() or {}).get("stations") or []
+        if stations:
+            return True, {"stations": stations}
+        for line in dut.lines(seconds=8):
+            if "state=operational" in line and "broker=up" in line:
+                return True, {"diag": line}
+    return False, {}
+
+
 def decoded_values(line):
     """The object count from a `cycle:` log line, or None."""
     m = re.search(r"cycle: \d+ bytes, (\d+) objects", line)

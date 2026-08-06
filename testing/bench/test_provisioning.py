@@ -30,7 +30,7 @@ import time
 
 import pytest
 
-from conftest import BENCH_PASS, BENCH_SSID, BROKER_URI
+from conftest import BENCH_PASS, BENCH_SSID, BROKER_URI, wait_until_connected
 from workbench_driver import CommandError
 
 pytestmark = [pytest.mark.provisioning, pytest.mark.disruptive]
@@ -373,10 +373,22 @@ def test_ts057_a_valid_submission_survives_the_reboot(unprovisioned, dut, wb):
     wb.sta_leave()
     wb.ap_start(BENCH_SSID, BENCH_PASS, internet=True)
 
-    joined = dut.await_line(r"wifi:connected with \S+.*bssid = \S+", seconds=90)
-    print(f"  {joined}")
+    connected, how = wait_until_connected(wb, dut, seconds=120)
+    print(f"  connected: {how}")
+    assert connected, (
+        f"the device never reached {BENCH_SSID} in 120 s — no station on this "
+        "bench's AP and no `broker=up` from the board"
+    )
     radio = wb.ap_status()
-    assert BENCH_SSID in joined, f"the device joined something else: {joined}"
+
+    # The BSSID if the line is still in the buffer. It is printed once and is
+    # usually gone by now, so its absence proves nothing; its presence must
+    # still name this bench.
+    for line in dut.lines(seconds=6):
+        if "bssid =" in line:
+            assert BENCH_SSID in line, f"the device joined something else: {line}"
+            print(f"  {line}")
+            break
 
     stored = dut.await_line(r"diag:.*cfg=nvs", seconds=60)
     print(f"  {stored}")
