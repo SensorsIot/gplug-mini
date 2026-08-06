@@ -192,3 +192,58 @@ def test_ts047_no_discovery_without_a_meter_serial(dut, broker, sim, wb):
         )
     finally:
         watch.close()
+
+
+@pytest.mark.exception
+@pytest.mark.slow
+def test_ts046_discovery_is_restated_on_a_new_session(dut, wb, sim, dut_mac):
+    """FR-HA-01 (TS-046). A broker that forgot must be told again.
+
+    Retained discovery is a statement to the BROKER, not a fact about the
+    device, and a broker that restarts without persistence has forgotten it —
+    which this bench's mosquitto does every single time, having no persistence
+    configured. Until 2026-08-06 the firmware latched `discovery_done` once per
+    boot, so after any broker restart the entities were gone until somebody
+    power-cycled a device that lives in a meter cabinet.
+
+    The device is deliberately NOT reset here. A reboot would republish under
+    either behaviour and prove nothing; the whole question is whether a new
+    session alone is enough.
+    """
+    watch = MqttWatch(BENCH_HOST, [DISCOVERY])
+    try:
+        time.sleep(8)
+        before = {m[1] for m in watch.messages}
+        assert before, "no discovery configs to begin with — nothing to lose"
+        print(f"\n  {len(before)} config(s) present before the outage")
+
+        # Forget them, then break the session without touching the device.
+        watch.clear_retained(sorted(before))
+        wb.mqtt_stop()
+        time.sleep(15)
+        wb.mqtt_start()
+        assert wb.mqtt_status().get("running"), "the broker did not come back"
+        restarted = watch.mark()
+
+        deadline = time.monotonic() + 150
+        while time.monotonic() < deadline:
+            if len({m[1] for m in watch.since(restarted, "homeassistant/")}) >= len(before):
+                break
+            time.sleep(5)
+        after = {m[1] for m in watch.since(restarted, "homeassistant/")}
+        print(f"  {len(after)} config(s) restated on the new session")
+
+        assert after, (
+            "the device reconnected and never restated its discovery configs. "
+            "The broker has forgotten the entities and the device believes it "
+            "has already said them, so a consumer sees nothing until someone "
+            "physically power-cycles a device in a meter cabinet."
+        )
+        assert after >= before, (
+            f"only {len(after)} of {len(before)} configs came back: "
+            f"{sorted(before - after)}"
+        )
+    finally:
+        watch.close()
+        if not wb.mqtt_status().get("running"):
+            wb.mqtt_start()

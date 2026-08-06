@@ -42,6 +42,12 @@ void mqtt_start(const Config& conf);
 
 bool mqtt_connected();
 
+// Increments once per established broker session, so a caller can tell a new
+// session from a continuing one. Anything the device must state to the broker
+// rather than merely send it — retained discovery above all — has to be
+// restated on a session it has not spoken on yet.
+uint32_t mqtt_session();
+
 // Retained, QoS 1 — the discovery contract in FSD Appendix D.
 void mqtt_publish_discovery(const char* topic, const char* payload);
 

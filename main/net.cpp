@@ -31,6 +31,7 @@ char state_top[96];
 
 esp_mqtt_client_handle_t client = nullptr;
 volatile bool connected = false;
+volatile uint32_t session_id = 0;   // ++ per established session
 
 void on_wifi(void*, esp_event_base_t base, int32_t id, void* data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -63,6 +64,7 @@ void on_mqtt(void*, esp_event_base_t, int32_t id, void* data) {
     case MQTT_EVENT_CONNECTED:
       ESP_LOGI(TAG, "broker connected");
       connected = true;
+      ++session_id;
       // Availability is retained so a subscriber that arrives later still
       // learns the device is up (FR-HA-06).
       esp_mqtt_client_publish(client, status_top, "online", 0, 1, 1);
@@ -197,6 +199,8 @@ void mqtt_start(const Config& conf) {
 }
 
 bool mqtt_connected() { return connected; }
+
+uint32_t mqtt_session() { return session_id; }
 
 void mqtt_publish_discovery(const char* topic, const char* payload) {
   if (client == nullptr) return;

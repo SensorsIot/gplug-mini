@@ -127,7 +127,15 @@ char meter_serial[32] = "";
 // "provisioned" from "fell back to build defaults" is reading a different code
 // path than it thinks (FR-NVS-02).
 const char* config_source = "unknown";
-bool discovery_done = false;
+// The session discovery was last published on, not a boolean. Retained
+// discovery is a statement to the BROKER, and a broker that restarts without
+// persistence has forgotten it — as this project's own bench mosquitto does,
+// every time. A once-per-boot latch leaves the device believing it has said
+// something to a peer that is no longer listening, and the entities stay gone
+// until someone power-cycles a device in a meter cabinet.
+//
+// 0 is "never published", and session ids start at 1.
+uint32_t discovery_session = 0;
 
 void on_value(const dlms_parser::AxdrCapture& c) {
   std::array<char, 32> obis_buf;
@@ -197,7 +205,7 @@ void publish_cycle() {
     return;
   }
 
-  if (!discovery_done) {
+  if (discovery_session != gplug::mqtt_session()) {
     char topic[128], payload[768];
     size_t n = 0;
     for (const char* obis : { "1.1.1.8.0.255", "1.1.2.8.0.255", "1.1.5.8.0.255",
@@ -211,9 +219,10 @@ void publish_cycle() {
       gplug::mqtt_publish_discovery(topic, payload);
       ++n;
     }
-    discovery_done = true;
-    ESP_LOGI(TAG, "published %u discovery configs for meter %s",
-             static_cast<unsigned>(n), meter_serial);
+    discovery_session = gplug::mqtt_session();
+    ESP_LOGI(TAG, "published %u discovery configs for meter %s (session %u)",
+             static_cast<unsigned>(n), meter_serial,
+             static_cast<unsigned>(discovery_session));
   }
 
   if (cycle_set.empty()) return;   // FR-AGG-06
