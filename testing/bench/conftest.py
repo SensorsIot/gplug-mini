@@ -736,12 +736,23 @@ class MqttWatch:
         import paho.mqtt.client as mqtt
 
         self.messages = []          # (monotonic, topic, payload, retain)
+        self._topics = list(topics)
         self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self._client.on_message = self._on_message
+        # Subscribed from on_connect, not once at setup. Several cases here stop
+        # and start the broker and then watch for what the device does about it;
+        # paho reconnects on its own, but the subscriptions are session state and
+        # do not come back with it. A watch held across the restart it performs
+        # therefore goes deaf through exactly the event it exists to observe, and
+        # reports the device as silent — TS-040 and TS-046 both failed that way
+        # while the device was republishing correctly.
+        self._client.on_connect = self._on_connect
         self._client.connect(host, port, 60)
-        for t in topics:
-            self._client.subscribe(t, qos=0)
         self._client.loop_start()
+
+    def _on_connect(self, client, _userdata, _flags, _reason, _props=None):
+        for t in self._topics:
+            client.subscribe(t, qos=0)
 
     def _on_message(self, _client, _userdata, msg):
         self.messages.append((

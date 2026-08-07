@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from conftest import BENCH_CHANNEL, BENCH_HOST, BENCH_PASS, BENCH_SSID, MqttWatch
+from conftest import wait_until_connected, BENCH_CHANNEL, BENCH_HOST, BENCH_PASS, BENCH_SSID, MqttWatch
 
 pytestmark = pytest.mark.exception
 
@@ -145,12 +145,16 @@ def test_ts033_ts034_an_access_point_outage_is_survived(dut, wb, broker, sim):
         )
     finally:
         wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            if (wb.ap_status() or {}).get("stations"):
-                break
-            time.sleep(5)
-        assert (wb.ap_status() or {}).get("stations"), (
-            "the device did not rejoin after the access point returned — the "
-            "rig is now in a state that would fail every test after this one"
+        # Two independent proofs, either sufficient. An empty `stations` list is
+        # not evidence that nothing is associated: it trails the radio by up to
+        # twenty seconds, and this recovery check failed on it while the device
+        # was back and publishing. The device's own `broker=up` is the stronger
+        # of the two — the broker sits on the bench LAN, reachable only through
+        # this AP, so a device that reports it up has necessarily rejoined.
+        rejoined, how = wait_until_connected(wb, dut, seconds=150)
+        print(f"\n  recovery: {how}")
+        assert rejoined, (
+            "the device did not rejoin after the access point returned, by "
+            f"either proof ({how}) — the rig is now in a state that would fail "
+            "every test after this one"
         )

@@ -21,6 +21,25 @@ pytestmark = [pytest.mark.exception, pytest.mark.slow, pytest.mark.disruptive]
 
 PROJECT = "gplug-mini"
 VALID_IMAGE = f"http://{BENCH_AP_GATEWAY}:8080/firmware/{PROJECT}/gplug-mini-valid.bin"
+
+# WARNING, and it is not a small one: a successful update REPLACES the firmware
+# under test. Every case after TS-062 runs against whatever image the relay
+# serves, not the build the run set out to verify — and the relay's image is
+# whatever somebody uploaded last.
+#
+# That silently invalidated a whole investigation: the relay held a build from
+# four hours before a discovery fix, so the device spent every run after the OTA
+# phase without it, and the resulting failures read as a firmware defect that had
+# in fact been fixed. Two experiments were run against the wrong binary before
+# anyone compared the file sizes.
+#
+# So the relay image must BE the build under test. Upload it before the run:
+#
+#     curl -F project=gplug-mini -F file=@build/gplug-mini.bin \
+#          -F filename=gplug-mini-valid.bin $WT/api/firmware/upload
+#
+# and re-flash the device afterwards if these cases ran. Until the harness owns
+# that, treat any result taken after this file as suspect.
 STATUS = "gplug/+/status"
 STATE = "gplug/+/state"
 
