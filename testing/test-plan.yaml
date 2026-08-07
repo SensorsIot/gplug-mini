@@ -1307,6 +1307,23 @@ test_cases:
   reason: null
   commit: ba6d09d
   when: '2026-08-06'
+- id: TS-046
+  kind: atomic
+  scenario: deviation
+  verifies:
+  - FR-HA-01
+  tier: bench
+  needs:
+  - board
+  - mbus-sim
+  - mqtt-broker
+  does: Clear the retained configs, restart the broker without resetting the device, and watch for them to be restated
+  expected: Every config the device published before the outage is published again on the new session
+  procedure: P-PUBLISH
+  status: not done
+  reason: null
+  commit: null
+  when: null
 - id: TS-047
   kind: atomic
   scenario: deviation
@@ -1976,10 +1993,14 @@ test_cases:
   does: Force a watchdog reset; read the console
   expected: Reset reason reported as watchdog
   procedure: P-TARGET
-  status: successful
-  reason: null
-  commit: 9ba9bb1
-  when: '2026-08-06'
+  status: not done
+  reason: 'Never executed as specified. The stimulus is a watchdog reset read at target tier; what was recorded came from
+    a bench node performing a JTAG reset and asserting only that the reason was not power-on - a different stimulus and a
+    weaker claim. The bench test is withdrawn: FR-WDT-04 is reported twice per boot and both lines fall inside the window
+    where this board''s CDC drops output, so the console cannot decide it from outside. TS-081 forces the watchdog reset
+    this case needs.'
+  commit: null
+  when: null
 - id: TS-085
   kind: atomic
   scenario: negative

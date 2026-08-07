@@ -34,20 +34,28 @@ def publish_ota(mac, url):
     return topic
 
 
-def _uptime_ms(dut, seconds=25):
+def _uptime_ms(dut, seconds=25, tries=3):
     """The device's own uptime from any log line, which is how a reboot is seen.
 
     Reading the uptime is what distinguishes "it restarted" from "it went quiet":
     the console drops output for long stretches on this board, so absence proves
     nothing, but a timestamp that went backwards is unambiguous.
+
+    Retried, because that same silence can swallow a whole 25 s window. A single
+    empty read reports a running board as "silent to begin with" and fails the
+    test before it has begun — which is a statement about the console, not about
+    the device.
     """
     import re
-    best = None
-    for line in dut.lines(seconds=seconds):
-        m = re.search(r"^\s*[IWE]\s*\((\d+)\)", line)
-        if m:
-            best = int(m.group(1))
-    return best
+    for _ in range(tries):
+        best = None
+        for line in dut.lines(seconds=seconds):
+            m = re.search(r"^\s*[IWE]\s*\((\d+)\)", line)
+            if m:
+                best = int(m.group(1))
+        if best is not None:
+            return best
+    return None
 
 
 def test_ts062_a_url_on_the_command_topic_starts_an_update(dut, broker, sim, dut_mac):

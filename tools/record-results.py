@@ -38,8 +38,17 @@ OUTCOME = {
     "SKIPPED": "not done",
     "XFAIL": "not done",
 }
+# Which tiers a log may write. A bench run must never satisfy a field case, and
+# the node-name convention below cannot tell the difference on its own: a bench
+# node called `test_ts021_...` was once recorded against a FIELD case, reporting
+# a real-meter comparison as passing on evidence that never involved a meter.
+TIERS_FOR = {"testing/bench": {"bench"}}
+
 RESULT_LINE = re.compile(
-    r"^(?P<path>testing/bench/\S+?)::(?P<node>\S+?)\s+"
+    # The bracketed part of a parametrised node can contain spaces, so the node
+    # is not simply non-whitespace: `test_ts038_...[broker-no broker]`. Matching
+    # \S+ alone silently dropped every parametrised case from the record.
+    r"^(?P<path>testing/bench/\S+?)::(?P<node>\S+?(?:\[[^\]]*\])?)\s+"
     r"(?P<outcome>PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b"
 )
 CASE_IN_NODE = re.compile(r"_(ts|wf)(\d{3})", re.I)
@@ -59,6 +68,11 @@ def parse(log_path):
         prefix = found.group(1).upper()
         out.append((f"{prefix}-{found.group(2)}", m.group("outcome"), m.group("node")))
     return out
+
+
+def status_rank(outcome):
+    """How strong a claim an outcome makes. A failure outranks a pass."""
+    return {"FAILED": 2, "ERROR": 2}.get(outcome, 1)
 
 
 def main():
@@ -81,12 +95,24 @@ def main():
     if not results:
         sys.exit(f"no result lines found in {a.log}")
 
-    changes, unmatched = [], []
+    changes, unmatched, refused = [], [], []
+    seen_failed = {cid for cid, outcome, _ in results if outcome in ("FAILED", "ERROR")}
     for case_id, outcome, node in results:
         if case_id is None or case_id not in by_id:
             unmatched.append((node, outcome))
             continue
         case = by_id[case_id]
+        # A parametrised case is one case. pytest reports one line per
+        # parametrisation, and last-wins would record TS-038 as passing because
+        # its `ssid` variant happened to run after its `pass` variant failed.
+        # Each parametrisation is a separate obligation, so any failure is the
+        # case's result.
+        if case_id in seen_failed and status_rank(outcome) < 2:
+            continue
+        allowed = TIERS_FOR.get("testing/bench", set())
+        if case.get("tier") not in allowed:
+            refused.append((node, case_id, case.get("tier")))
+            continue
         status = OUTCOME.get(outcome, "not done")
         before = case.get("status")
         case["status"] = status
@@ -105,6 +131,9 @@ def main():
 
     for node, outcome in unmatched:
         print(f"  no plan entry for {node} ({outcome})")
+    for node, case_id, tier in refused:
+        print(f"  REFUSED {node} -> {case_id}: a bench run cannot decide a "
+              f"{tier}-tier case")
 
     print(f"\n{len(changes)} case(s) updated at {commit}, {when}")
     for cid, before, after in sorted(changes):
