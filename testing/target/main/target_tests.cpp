@@ -59,7 +59,16 @@ constexpr uart_port_t METER_UART = UART_NUM_1;
 #define METER_CONF0_REG UART_CONF0_REG(1)
 #endif
 
-constexpr const char* NVS_NAMESPACE = "gplug";
+// The target cases work in namespaces of their own. They exercise how NVS
+// behaves — an erased namespace reads as absent, a value survives, a blob where
+// a string belongs fails cleanly — none of which needs the firmware's own
+// records. Using "gplug" erases the device's configuration, which leaves it in
+// its portal and every bench test behind it describing that instead of the
+// requirement it was written for.
+constexpr const char* NVS_PROBE_NAMESPACE = "gplug_probe";
+// Separate again, so a case that erases the probe namespace cannot take the
+// armed-watchdog marker with it.
+constexpr const char* NVS_WDT_NAMESPACE = "gplug_wdt";
 
 int checks = 0;
 
@@ -166,14 +175,14 @@ void ts014_uart_configuration() {
 // raises its portal — which is a device nobody can reach.
 void ts030_erased_nvs_reads_as_absent() {
   nvs_handle_t h;
-  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+  esp_err_t err = nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h);
   if (err == ESP_OK) {
     nvs_erase_all(h);
     nvs_commit(h);
     nvs_close(h);
   }
 
-  err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+  err = nvs_open(NVS_PROBE_NAMESPACE, NVS_READONLY, &h);
   char buf[64] = {};
   size_t len = sizeof(buf);
   esp_err_t read = ESP_ERR_NVS_NOT_FOUND;
@@ -193,14 +202,14 @@ void ts030_erased_nvs_reads_as_absent() {
 // the handle is open has not been persisted at all.
 void ts077_configuration_persists() {
   nvs_handle_t h;
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   ESP_ERROR_CHECK(nvs_set_str(h, "ssid", "persist-probe"));
   ESP_ERROR_CHECK(nvs_commit(h));
   nvs_close(h);
 
   char buf[64] = {};
   size_t len = sizeof(buf);
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READONLY, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READONLY, &h));
   const esp_err_t err = nvs_get_str(h, "ssid", buf, &len);
   nvs_close(h);
 
@@ -209,7 +218,7 @@ void ts077_configuration_persists() {
                 esp_err_to_name(err));
   ok("TS-077", err == ESP_OK && std::strcmp(buf, "persist-probe") == 0, detail);
 
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   nvs_erase_all(h);
   nvs_commit(h);
   nvs_close(h);
@@ -222,7 +231,7 @@ void ts077_configuration_persists() {
 // string is expected, which is the shape a partial write leaves behind.
 void ts078_corrupt_entry_is_survivable() {
   nvs_handle_t h;
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   const uint8_t junk[] = {0xDE, 0xAD, 0xBE, 0xEF};
   ESP_ERROR_CHECK(nvs_set_blob(h, "ssid", junk, sizeof(junk)));
   ESP_ERROR_CHECK(nvs_commit(h));
@@ -230,7 +239,7 @@ void ts078_corrupt_entry_is_survivable() {
 
   char buf[64] = {};
   size_t len = sizeof(buf);
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READONLY, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READONLY, &h));
   const esp_err_t err = nvs_get_str(h, "ssid", buf, &len);
   nvs_close(h);
 
@@ -243,36 +252,78 @@ void ts078_corrupt_entry_is_survivable() {
                 esp_err_to_name(err));
   ok("TS-078", err != ESP_OK, detail);
 
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   nvs_erase_all(h);
   nvs_commit(h);
   nvs_close(h);
 }
 
-// ── TS-081 — FR-WDT-01: the task that matters is subscribed ─────────────────
+// ── TS-081 — FR-WDT-01, and TS-084 — FR-WDT-04 ──────────────────────────────
 //
-// Subscribing and then reporting is the whole check. A watchdog nobody is
-// registered with is configuration that looks right in the source and protects
-// nothing at runtime.
-void ts081_task_is_watchdog_subscribed() {
+// A subscribed task that stalls causes a reset within the configured period,
+// and the reason that reset gives is `task watchdog`.
+//
+// Both halves need the reset to actually happen, so this case cannot report its
+// own result: the chip is gone before it could print one. It arms a marker in
+// NVS and then stalls deliberately; the verdict is printed by the NEXT boot,
+// which reads esp_reset_reason() and clears the marker.
+//
+// Checking that esp_task_wdt_add() returns ESP_OK proves only that the API
+// accepted a registration. A watchdog can be configured perfectly and still not
+// reset a stalled task — which is the failure the requirement is about, and the
+// one that leaves a device in a meter cabinet hung until someone drives to it.
+constexpr const char* WDT_ARMED_KEY = "wdt_armed";
+
+void ts081_stall_a_subscribed_task() {
+  nvs_handle_t h;
+  ESP_ERROR_CHECK(nvs_open(NVS_WDT_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_set_u8(h, WDT_ARMED_KEY, 1));
+  ESP_ERROR_CHECK(nvs_commit(h));
+  nvs_close(h);
+
   esp_task_wdt_config_t cfg = {};
-  cfg.timeout_ms = 5000;
+  cfg.timeout_ms = 3000;
   cfg.idle_core_mask = 0;
-  cfg.trigger_panic = false;
+  cfg.trigger_panic = true;          // the point: a stall must RESET, not warn
   const esp_err_t init = esp_task_wdt_init(&cfg);
-  const bool inited = init == ESP_OK || init == ESP_ERR_INVALID_STATE;
+  if (init != ESP_OK && init != ESP_ERR_INVALID_STATE) {
+    ok("TS-081", false, "the task watchdog could not be initialised");
+    return;
+  }
+  esp_task_wdt_add(nullptr);
 
-  const esp_err_t add = esp_task_wdt_add(nullptr);
-  const bool added = add == ESP_OK || add == ESP_ERR_INVALID_ARG;
-  const esp_err_t status = esp_task_wdt_status(nullptr);
+  std::printf("ARMED TS-081 stalling now; the verdict is on the next boot\n");
+  std::fflush(stdout);
 
+  // Never fed. Three seconds from here the chip resets, or the requirement is
+  // not met and this loop runs forever — which the harness sees as a board that
+  // stopped answering, and reports as such.
+  while (true) {
+  }
+}
+
+// Printed at boot, before the console accepts anything, so the verdict cannot
+// be missed by a harness that connected late.
+void report_armed_watchdog_reset() {
+  nvs_handle_t h;
+  if (nvs_open(NVS_WDT_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return;
+  uint8_t armed = 0;
+  const esp_err_t found = nvs_get_u8(h, WDT_ARMED_KEY, &armed);
+  // Cleared first, so a marker written by a run that then failed in some other
+  // way cannot leave this board arming itself on every boot.
+  nvs_erase_key(h, WDT_ARMED_KEY);
+  nvs_commit(h);
+  nvs_close(h);
+  if (found != ESP_OK || !armed) return;
+
+  const esp_reset_reason_t r = esp_reset_reason();
   char detail[128];
-  std::snprintf(detail, sizeof(detail), "init=%s add=%s status=%s",
-                esp_err_to_name(init), esp_err_to_name(add),
-                esp_err_to_name(status));
-  ok("TS-081", inited && added && status == ESP_OK, detail);
-
-  esp_task_wdt_delete(nullptr);
+  std::snprintf(detail, sizeof(detail), "reset reason after a stalled subscribed task = %d", static_cast<int>(r));
+  ok("TS-081", r == ESP_RST_TASK_WDT, detail);
+  ok("TS-084", r == ESP_RST_TASK_WDT,
+     r == ESP_RST_TASK_WDT ? "reported as task watchdog" : "not reported as a watchdog reset");
+  std::printf("DONE %d checks\n", checks);
+  std::fflush(stdout);
 }
 
 // ── TS-093 — NFR-SEC-01: the non-claim, stated honestly ─────────────────────
@@ -283,15 +334,18 @@ void ts081_task_is_watchdog_subscribed() {
 // so that if someone later enables encryption without updating NFR-SEC-01 the
 // suite says the documented risk no longer matches the device.
 void ts093_credentials_are_plaintext_as_declared() {
+  // A separate namespace, because erasing the firmware's own leaves the device
+  // unprovisioned and every test behind this one then describes a board in its
+  // portal. NVS stores plaintext the same way whichever namespace it is.
   nvs_handle_t h;
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   ESP_ERROR_CHECK(nvs_set_str(h, "pass", "plaintext-probe"));
   ESP_ERROR_CHECK(nvs_commit(h));
   nvs_close(h);
 
   char buf[64] = {};
   size_t len = sizeof(buf);
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READONLY, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READONLY, &h));
   const esp_err_t err = nvs_get_str(h, "pass", buf, &len);
   nvs_close(h);
 
@@ -301,7 +355,7 @@ void ts093_credentials_are_plaintext_as_declared() {
                 "it is not a defect", err == ESP_OK ? "yes" : "NO");
   ok("TS-093", err == ESP_OK && std::strcmp(buf, "plaintext-probe") == 0, detail);
 
-  ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h));
+  ESP_ERROR_CHECK(nvs_open(NVS_PROBE_NAMESPACE, NVS_READWRITE, &h));
   nvs_erase_all(h);
   nvs_commit(h);
   nvs_close(h);
@@ -317,7 +371,7 @@ const Case CASES[] = {
   { "TS-030", ts030_erased_nvs_reads_as_absent },
   { "TS-077", ts077_configuration_persists },
   { "TS-078", ts078_corrupt_entry_is_survivable },
-  { "TS-081", ts081_task_is_watchdog_subscribed },
+  { "TS-081", ts081_stall_a_subscribed_task },
   { "TS-093", ts093_credentials_are_plaintext_as_declared },
 };
 
@@ -341,6 +395,7 @@ void run_named(const char* name) {
 
 extern "C" void app_main() {
   ESP_ERROR_CHECK(nvs_flash_init());
+  report_armed_watchdog_reset();     // TS-081/TS-084, from the boot before this one
   ESP_LOGI(TAG, "gPlug-mini target tests ready");
   std::printf("TARGET_TESTS_READY\n");
   std::fflush(stdout);
