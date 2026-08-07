@@ -25,6 +25,10 @@
 
 #include "driver/uart.h"
 #include "esp_err.h"
+#include "soc/gpio_reg.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/io_mux_reg.h"
+#include "soc/uart_reg.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
@@ -45,6 +49,15 @@ constexpr const char* TAG = "target";
 constexpr int METER_RX_PIN = 7;
 constexpr int METER_BAUD = 2400;
 constexpr uart_port_t METER_UART = UART_NUM_1;
+
+// The C3's UART config registers gained a `_SYNC` suffix in newer IDF releases;
+// the bit within them did not move. Selected here so the register reads below
+// stay readable.
+#ifdef UART_CONF0_SYNC_REG
+#define METER_CONF0_REG UART_CONF0_SYNC_REG(1)
+#else
+#define METER_CONF0_REG UART_CONF0_REG(1)
+#endif
 
 constexpr const char* NVS_NAMESPACE = "gplug";
 
@@ -99,14 +112,49 @@ void ts014_uart_configuration() {
   ok("TS-014", baud_ok && parity == UART_PARITY_EVEN &&
                 bits == UART_DATA_8_BITS && stop == UART_STOP_BITS_1, detail);
 
-  // The pad assignment itself, read back from the driver. A UART configured
-  // perfectly on the wrong pin is the failure that looks exactly like a silent
-  // meter, and it is the one uart_set_pin can get wrong without erroring.
-  const bool rx_ok = uart_is_driver_installed(METER_UART);
+  // FR-MTR-02 — the receive signal is inverted, read from the peripheral's own
+  // register. `uart_set_line_inverse` returning ESP_OK proves only that the
+  // call was well formed.
+  const bool inverted = (REG_READ(METER_CONF0_REG) & UART_RXD_INV) != 0;
+  std::snprintf(detail, sizeof(detail), "UART%d conf0 rxd_inv=%d",
+                static_cast<int>(METER_UART), inverted ? 1 : 0);
+  ok("TS-014.invert", inverted, detail);
+
+  // FR-MTR-03 — both internal pulls off. The meter front-end drives the line;
+  // a pull fighting it shifts the threshold and shows up as bytes that decode
+  // at one temperature and not another, which is the hardest possible fault to
+  // attribute.
+  const uint32_t pad = REG_READ(IO_MUX_GPIO7_REG);
+  const bool pu = (pad & FUN_PU) != 0;
+  const bool pd = (pad & FUN_PD) != 0;
+  std::snprintf(detail, sizeof(detail), "GPIO%d pull-up=%d pull-down=%d",
+                METER_RX_PIN, pu ? 1 : 0, pd ? 1 : 0);
+  ok("TS-014.pulls", !pu && !pd, detail);
+
+  // FR-MTR-04 — the device never transmits on the meter link.
+  //
+  // Asserted structurally rather than by watching the line, because watching
+  // can only ever say nothing was transmitted during the window. Every pad's
+  // output selector is read: if none of them routes this UART's TX signal, and
+  // the meter pad drives nothing at all, transmission is impossible rather than
+  // merely unobserved. That is the claim FR-MTR-04 makes, and the interface it
+  // protects belongs to the DSO.
+  int tx_pad = -1;
+  for (int i = 0; i <= 21; ++i) {
+    const uint32_t sel = REG_READ(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * i)
+                         & GPIO_FUNC0_OUT_SEL_V;
+    if (sel == U1TXD_OUT_IDX) { tx_pad = i; break; }
+  }
+  const uint32_t meter_out = REG_READ(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * METER_RX_PIN)
+                             & GPIO_FUNC0_OUT_SEL_V;
+  const bool meter_pad_silent = (meter_out == SIG_GPIO_OUT_IDX)
+                                && ((REG_READ(GPIO_ENABLE_REG) & (1u << METER_RX_PIN)) == 0);
   std::snprintf(detail, sizeof(detail),
-                "driver installed on UART%d for GPIO%d",
-                static_cast<int>(METER_UART), METER_RX_PIN);
-  ok("TS-014.pad", rx_ok, detail);
+                "U%dTXD routed to pad %d; GPIO%d out_sel=%u output_enable=%d",
+                static_cast<int>(METER_UART), tx_pad, METER_RX_PIN,
+                static_cast<unsigned>(meter_out),
+                (REG_READ(GPIO_ENABLE_REG) & (1u << METER_RX_PIN)) ? 1 : 0);
+  ok("TS-014.no-tx", tx_pad < 0 && meter_pad_silent, detail);
 
   uart_driver_delete(METER_UART);
 }
