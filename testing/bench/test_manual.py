@@ -98,9 +98,9 @@ def test_ts056_the_button_does_not_strap_the_board_into_download_mode(dut, wb):
              "release. Click Done when released.")
 
     # Proven off the console, because the console cannot prove it. After a
-    # physical replug the CDC re-enumerates and stays silent for long stretches —
-    # measured 2026-08-06, 90 s of nothing from a board that had booted fine —
-    # so "no banner" is not evidence of a failure to boot.
+    # physical replug the CDC re-enumerates and can stay silent for a minute or
+    # more from a board that booted fine, so "no banner" is not evidence of a
+    # failure to boot.
     #
     # A board in SPI download boot runs NO firmware: it cannot join a network and
     # cannot publish. So a station on this AP, or a message on the broker, is

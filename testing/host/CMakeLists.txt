@@ -80,6 +80,8 @@ add_test(NAME TS-107.parse-until-exhausted
 
 add_test(NAME TS-011.crc-invalid-frame-discarded
          COMMAND test_decode crcdrop ${FIXTURES}/e450_serial8.hex)
+add_test(NAME TS-012.crc-invalid-frame-not-forwarded
+         COMMAND test_decode crcleak ${FIXTURES}/e450_serial8.hex)
 add_test(NAME TS-013.identity-absent
          COMMAND test_decode noidentity ${FIXTURES}/e450_serial8.hex)
 

@@ -5,12 +5,12 @@ boundary: the device's own log says what it handed to the MQTT client, and the
 gap between that and what arrived is exactly where a wrong topic or a dropped
 session hides.
 
-Two habits are load-bearing and were paid for on 2026-08-06:
+Two habits are load-bearing:
 
 * **Never assert on a line the device prints once.** The console drops
-  characters and goes quiet for stretches, and two tests spent a day reporting a
-  working board as broken because a transient had scrolled past. Assert on the
-  broker, or on the periodic diag line, or on nothing.
+  characters and goes quiet for stretches, so a transient that scrolled past is
+  indistinguishable from one that was never printed, and a working board reports
+  as broken. Assert on the broker, or on the periodic diag line, or on nothing.
 * **Retention cannot be read off a live delivery.** MQTT sets the retain flag
   only on messages the broker replays at subscribe time, so proving a config is
   retained means arriving late and being sent it.
@@ -202,9 +202,9 @@ def test_ts046_discovery_is_restated_on_a_new_session(dut, wb, sim, dut_mac):
     Retained discovery is a statement to the BROKER, not a fact about the
     device, and a broker that restarts without persistence has forgotten it —
     which this bench's mosquitto does every single time, having no persistence
-    configured. Until 2026-08-06 the firmware latched `discovery_done` once per
-    boot, so after any broker restart the entities were gone until somebody
-    power-cycled a device that lives in a meter cabinet.
+    configured. A firmware that latches discovery once per boot leaves the
+    entities gone after any broker restart until somebody power-cycles a device
+    that lives in a meter cabinet.
 
     The device is deliberately NOT reset here. A reboot would republish under
     either behaviour and prove nothing; the whole question is whether a new

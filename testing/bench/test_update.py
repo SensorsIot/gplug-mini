@@ -143,10 +143,10 @@ def test_ts084_the_reset_reason_is_reported(dut):
     constant.
     """
     # Not read straight after the reset. SLOT1 is a native USB JTAG device, so a
-    # reset re-enumerates the port and the first ~2.5 s of output goes with it —
-    # measured, the earliest line any monitor sees is t=2647 ms, and the boot
-    # report is long gone. The firmware repeats it once the network is up, which
-    # is what this waits for.
+    # reset re-enumerates the port and the first ~2.5 s of output goes with it:
+    # the earliest line any monitor sees is around t=2650 ms, by which point the
+    # boot report is long gone. The firmware repeats it once the network is up,
+    # which is what this waits for.
     dut.drain()
     dut.reset()
     line = dut.await_line(r"reset reason:", seconds=60)

@@ -5,12 +5,11 @@ not delivering measurements cannot tell you anything useful about how it handles
 a corrupted frame, a silent line or a rolled-back update: every one of those
 tests fails for the same upstream reason and the report reads as a dozen defects.
 
-There was no test here until 2026-08-05, and its absence cost a day. The suite
-had cases for both serial lengths, mid-burst starts, resets, corrupted
-checksums, silence and noise — deviations and malfunctions, every one — and
-nothing that said "a measurement reached the broker". So a defect that stopped
-the device publishing entirely was found sideways, when unrelated OTA tests
-errored for want of a topic name.
+A suite can hold cases for both serial lengths, mid-burst starts, resets,
+corrupted checksums, silence and noise — deviations and malfunctions, every one
+— and still assert nowhere that a measurement reached the broker. A device that
+publishes nothing at all then shows up only sideways, as unrelated tests failing
+for want of a topic name.
 
 The chain, in the order it has to work:
 

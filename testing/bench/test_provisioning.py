@@ -1,9 +1,8 @@
 """Bench tier — the captive portal, from a blank device to a joined one.
 
-These began life as a debugging script. That script proved the portal works on
-2026-08-05 and then had nothing to say the next day, because a script that
-answers "did it work just now" is not a test: nobody runs it again, and nothing
-fails when a change breaks it. Everything it established is here instead.
+A script that answers "did it work just now" is not a test: nobody runs it
+again, and nothing fails when a change breaks it. Everything the portal needs
+proven is asserted here instead.
 
 The order below is the order the device experiences, and each step's failure has
 exactly one cause:
@@ -12,7 +11,7 @@ exactly one cause:
     admits you  ->  any hostname reaches the form  ->  a bad field is refused
     ->  a good form is stored  ->  the device reboots into it
 
-Three rules were paid for and are enforced here rather than rediscovered:
+Three rules are enforced here rather than rediscovered:
 
 * **The portal window is a budget.** It closes after five minutes and a harness
   bug spends it as readily as a tester does. Every test that needs the portal
@@ -20,8 +19,9 @@ Three rules were paid for and are enforced here rather than rediscovered:
 * **The relay's body is base64 in both directions.** Sending raw text delivers an
   empty body, and the device then refuses it correctly for a reason that reads as
   a firmware defect.
-* **An SSID is not an identity.** Two benches once answered to one name and the
-  board joined the wrong one. The join test checks the BSSID, not the name.
+* **An SSID is not an identity.** Two benches can answer to one name, and a
+  board that joined the wrong one looks exactly like a board that joined. The
+  join test checks the BSSID, not the name.
 """
 
 import base64
@@ -138,8 +138,8 @@ def ensure_provisioned(wb, dut, seconds=180):
     Any test that blanks NVS owes this to the next one. A device left in its
     portal reports no meter cycles at all, so the tests behind it fail with "the
     meter link is silent" — describing a rig they were handed rather than
-    anything they set out to measure. On 2026-08-06 one workflow that failed at
-    an HTTP timeout took the whole bread-and-butter phase down that way.
+    anything they set out to measure. One workflow that fails at an HTTP timeout
+    takes the whole bread-and-butter phase down with it.
 
     Best effort by design: it returns whether the device is back in service, and
     the caller decides. Raising here would replace one misleading failure with
@@ -284,9 +284,9 @@ def test_ts059_the_form_lists_networks_in_range(unprovisioned, dut, wb):
     A network name typed one character wrong fails later as a *wrong password*,
     which is the hardest possible way to discover a typo. The list is the cure.
 
-    It is also a regression guard: the scan moved out of the request path in
-    4a6caf8 because a blocking scan per render cost ~3 s and broke the first
-    requests after association. Cached is fine; absent is not.
+    It is also a regression guard: the scan belongs outside the request path,
+    because a blocking scan per render costs ~3 s and breaks the first requests
+    after association. Cached is fine; absent is not.
     """
     ssid = portal_ssid(dut)
     try:

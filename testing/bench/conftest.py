@@ -231,9 +231,9 @@ class Dut:
         pattern to one long monitor call. A single long call binds to the serial
         endpoint it had when it started, and on this board that endpoint does
         not survive a reset: the call then sits out its whole window against a
-        device that is printing perfectly into a port nobody is reading.
-        Measured 2026-08-06 — a 60 s pattern monitor returned nothing while a
-        15 s one issued moments later caught three lines.
+        device that is printing perfectly into a port nobody is reading: a 60 s
+        pattern monitor returns nothing while a 15 s one issued moments later
+        catches three lines.
 
         A timeout is still a failure, not an absent result. Nothing on the
         device returns an exit code, and a board that crashes or hangs prints
@@ -270,9 +270,9 @@ class Dut:
         restarts immediately; the USB device re-enumerates a moment later, and
         anything that reads in between reads silence.
 
-        Not waiting here cost a whole suite run on 2026-08-06: every test that
-        reset the board saw an empty console and failed as though the firmware
-        were dead, while a hard reset over the same cable printed normally.
+        Without this wait, every test that resets the board reads an empty
+        console and fails as though the firmware were dead, on a board that is
+        running perfectly.
         """
         self.wb.serial_reset(DUT)
         self._stash = []
@@ -351,11 +351,11 @@ class Sim:
     def command(self, text, settle=0.6, retries=2):
         """Send a console command, reopening the port if it has died.
 
-        The RFC2217 link drops under a long run — measured on 2026-08-06, it
-        failed 20 minutes in with `timeout while waiting for option 'purge'` and
-        then `BrokenPipeError`, and because this connection is session-scoped
-        every later test that touched the simulator errored in setup. Five did.
-        None of those errors said anything about the device.
+        The RFC2217 link drops under a long run, around twenty minutes in, with
+        `timeout while waiting for option 'purge'` and then `BrokenPipeError`.
+        The connection is session-scoped, so without the reopen every later test
+        that touches the simulator errors in setup, and none of those errors say
+        anything about the device.
         """
         for attempt in range(retries + 1):
             try:
@@ -423,8 +423,8 @@ class Sim:
     # nothing at all: it loses a few bytes at the head of every burst, and those
     # bytes are the opening `7E A0 95` of frame 1. Losing frame 1 loses GBT
     # block 1, and blocks 2 and 3 arriving perfectly then reassemble into
-    # nothing. Measured 2026-08-05: 0 bytes of preamble decodes 0 objects, 6
-    # decodes 6, and so do 12 and 24.
+    # nothing: 0 bytes of preamble decodes 0 objects, while 6, 12 and 24 all
+    # decode 6.
     #
     # This compensates for the head loss so decoding can be tested at all. It
     # does not explain or excuse it — see TS-025, which is that question.
@@ -437,6 +437,13 @@ class Sim:
         "silence": "0",
         "identity": "ldn",
         "serial": "8",
+        # The polarity the real front-end delivers (interface spec §2.2). The
+        # simulator drives a plain GPIO, so with `invert off` it presents the
+        # OPPOSITE of a meter and the device only reads it by probing its way
+        # off the line setting it ships with — every result then describes a
+        # configuration no installation ever has. `invert` is per simulator
+        # session, so it is set on every run rather than assumed.
+        "invert": "1",
     }
     SETTERS = {
         "fault": "fault none",
@@ -444,6 +451,7 @@ class Sim:
         "silence": "silence 0",
         "identity": "identity ldn",
         "serial": "serial 8",
+        "invert": "invert on",
     }
 
     def set_verified(self, field, value, attempts=4):
@@ -472,10 +480,10 @@ class Sim:
 
         Issued-and-assumed is not good enough here. The console interleaves the
         simulator's own emit log — one line every five seconds — with command
-        replies, and a directive can be swallowed in that traffic. On 2026-08-06
-        one lost `identity ldn` left the rig emitting no meter serial for a whole
-        run: the board never learned a serial, never published, and seven tests
-        failed or errored describing a device that was working perfectly.
+        replies, and a directive can be swallowed in that traffic. A lost
+        `identity ldn` leaves the rig emitting no meter serial for a whole run:
+        the board never learns a serial, never publishes, and every test behind
+        it fails describing a device that is working perfectly.
 
         So each field is set, read back, and set again if it did not take. What
         cannot be driven into place after several attempts is a rig fault and
@@ -551,9 +559,9 @@ def dut_mac(dut, broker):
     """The MAC the device publishes under, read from the broker's own topics.
 
     Not from the device's log. The topic name appears there once, early, in a
-    line that is gone by the time most tests look — three update tests errored
-    in setup on 2026-08-06 with "the device never named its own topic", on a
-    board that was connected and publishing. And not computed here either: a
+    line that is gone by the time most tests look, so a test that reads it there
+    errors in setup with "the device never named its own topic" on a board that
+    is connected and publishing. And not computed here either: a
     harness that derives the topic a second way agrees with itself and disagrees
     with the device.
 
@@ -587,22 +595,21 @@ def dut_mac(dut, broker):
     )
 
 
-# The bench identity, in one place because it was scattered and drifted.
+# The bench identity, in one place so it cannot drift.
 #
 # The SSID carries the bench radio's MAC and the AP subnet carries the bench's
-# own LAN octet, so no two benches can be confused for one another. That is the
-# fix for the failure of 2026-08-05: two benches both answered to `gplug-bench`,
-# the board joined the other one, and three correct broker addresses were each
-# blamed in turn before anyone read the BSSID in the board's own log.
+# own LAN octet, so no two benches can be confused for one another. Benches
+# sharing one SSID is the failure this prevents: the board joins whichever
+# answered, and every broker address then looks wrong in turn while the only
+# evidence is the BSSID in the board's own log.
 BENCH_SSID = "wb-7cb1c2"           # last 3 octets of the bench wlan0 d8:3a:dd:7c:b1:c2
 BENCH_PASS = "benchtest123"
 
 # Channel 1, and this is measured rather than chosen. On channel 6 the DUT
-# associated and was disassociated within seconds, over and over — reason 4
+# associates and is disassociated within seconds, over and over — reason 4
 # (association expired), reason 2 (auth expired), reason 201 — with zero
-# brownouts and zero resets across five minutes of uptime, so neither the supply
-# nor the firmware was ending it. Moved to channel 1 with the same image, it
-# joined at once and held for as long as it was watched.
+# brownouts and zero resets, so neither the supply nor the firmware is ending
+# it. On channel 1 the same image joins at once and holds.
 #
 # A scan says 2437 MHz carries a solar inverter's radio at -82 dBm and little
 # else, so this is not ordinary congestion; something on or near that channel is
@@ -619,11 +626,9 @@ BENCH_AP_GATEWAY = "192.168.168.1" # the bench as an AP; 192.168.4.1 belongs to 
 def broker(wb):
     """mosquitto, started for the test and left running.
 
-    One bench, one broker. An earlier version of this docstring said to start a
-    broker on both benches because the board "cannot tell you which" it joined —
-    that was wrong twice over. The board logs the BSSID it associated with, and
-    the actual problem was a shared SSID, which a second broker papers over
-    instead of fixing.
+    One bench, one broker. Running a second broker to cover "the board might
+    have joined the other bench" papers over a shared SSID instead of fixing it,
+    and the board logs the BSSID it associated with in any case.
 
     Mosquitto does not survive an rfc2217-portal restart, so this checks rather
     than assumes: a stopped broker refuses connections at an address that was
@@ -639,8 +644,7 @@ def broker(wb):
     # before it restarts the AP leaves every later test facing a device that is
     # provisioned, correct, and unable to reach anything — reporting itself as
     # `disconnected from wb-7cb1c2, reason 201`, which reads as a firmware
-    # fault. Measured on 2026-08-06: three bread-and-butter tests regressed
-    # exactly this way after passing twice.
+    # fault and regresses bread-and-butter tests that were passing.
     if not (wb.ap_status() or {}).get("active"):
         wb.ap_start(BENCH_SSID, BENCH_PASS, channel=BENCH_CHANNEL, internet=True)
         # The device is in backoff, capped at 30 s (FR-SUP-05), so give it time

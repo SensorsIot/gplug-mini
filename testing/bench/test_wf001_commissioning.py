@@ -81,9 +81,8 @@ def _bssid_suffix(ssid):
     """`wb-7cb1c2` -> `7c:b1:c2`, the last three octets the SSID was built from.
 
     The SSID carries the bench radio's own MAC precisely so this check needs no
-    second source. Deriving it from a written-down address would reintroduce the
-    thing that cost a day: an address that is correct and a radio that is not the
-    one being talked to.
+    second source. A written-down address can be correct and still name a radio
+    other than the one being talked to.
     """
     hexes = ssid.split("-")[-1]
     return ":".join(hexes[i:i + 2] for i in range(0, 6, 2))

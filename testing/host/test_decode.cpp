@@ -1,9 +1,9 @@
 // Host-tier decode tests — no hardware, no meter.
 //
-// These pin the three properties of dlms_parser that gPlug-mini's decoding
-// depends on. Each was measured against a published capture; each would go
-// unnoticed if a library upgrade changed it, and each fails in a way that looks
-// like a working meter rather than a broken one.
+// These pin the properties of dlms_parser that gPlug-mini's decoding depends
+// on. Each is asserted against a published capture; each would go unnoticed if a
+// library upgrade changed it, and each fails in a way that looks like a working
+// meter rather than a broken one.
 //
 // Run one case per invocation so CTest reports them separately:
 //     test_decode <case> <fixture>
@@ -297,6 +297,53 @@ void crc_invalid_frame_discarded(const char* fixture) {
   check(bad.size() < good.size(), "the corrupted frame contributes nothing");
 }
 
+// TS-012 — FR-MTR-08. The same corrupted capture, observed at the decoder's
+// OUTPUT rather than at its frame count.
+//
+// TS-011 asks whether the bad frame was dropped; this asks whether any part of
+// it got through. They are different failures. A parser that discards the frame
+// but has already handed over the two objects it read before reaching the FCS
+// passes TS-011 — fewer values came out — and still forwards data from a frame
+// known to be corrupt. That is the case FR-MTR-08 exists for, and it is worse
+// than a wrong count: the values it leaks are indistinguishable from good ones.
+//
+// So the criterion is containment, not size. Every value that survives the
+// corruption must be byte-identical to one the intact capture produced. A value
+// that is new, or the same OBIS carrying a different number, can only have come
+// from bytes the decoder should never have seen.
+void crc_invalid_frame_not_forwarded(const char* fixture) {
+  const auto good = decode(fixture);
+  check(!good.empty(), "the intact capture decodes, so the comparison means something");
+
+  std::vector<uint8_t> bytes = read_hex(fixture);
+  size_t last_flag = bytes.size();
+  while (last_flag-- > 0 && bytes[last_flag] != 0x7E) {}
+  bytes[last_flag - 1] ^= 0xFF;              // the FCS, two bytes before the closing flag
+  const auto bad = decode_bytes(std::move(bytes));
+
+  size_t leaked = 0;
+  for (const auto& v : bad) {
+    bool matched = false;
+    for (const auto& g : good) {
+      if (v.obis == g.obis && v.numeric == g.numeric &&
+          v.raw == g.raw && v.scaler == g.scaler && v.text == g.text) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      ++leaked;
+      printf("       leaked %s raw=%llu scaler=%d text=%s\n", v.obis.c_str(),
+             v.raw, v.scaler, v.text.c_str());
+    }
+  }
+  printf("       intact: %zu value(s); corrupted: %zu value(s), %zu of them unaccounted for\n",
+         good.size(), bad.size(), leaked);
+  check(leaked == 0,
+        "no value the intact capture did not also produce — nothing from the "
+        "corrupted frame reached the decoder's output");
+}
+
 // TS-013 — FR-MTR-10. The meter publishes its identity as either the COSEM
 // logical device name or device ID 1. Both positive cases are covered by the two
 // fixtures, which happen to carry one each. This is the third case: neither.
@@ -342,6 +389,7 @@ int main(int argc, char** argv) {
   else if (name == "exhaust")    parse_until_exhausted(fixture);
   else if (name == "midprefix")  midframe_prefix_then_boundary(fixture);
   else if (name == "crcdrop")    crc_invalid_frame_discarded(fixture);
+  else if (name == "crcleak")    crc_invalid_frame_not_forwarded(fixture);
   else if (name == "noidentity") identity_absent(fixture);
   else { std::fprintf(stderr, "unknown case: %s\n", name.c_str()); return 2; }
 

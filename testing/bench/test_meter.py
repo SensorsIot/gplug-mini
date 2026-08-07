@@ -37,40 +37,49 @@ def cycle_sizes(dut, seconds):
 
 
 @pytest.mark.deviation
-@pytest.mark.fast
-@pytest.mark.xfail(
-    reason="the firmware's line-setting probe rotates on absent framing, and a "
-           "pattern has none by construction — the setting moves during the test",
-    strict=False,
-)
-def test_ts022_polarity_is_right(dut, sim):
-    """TS-022 — FR-MTR-01, FR-MTR-02. Mode 1 drives a continuous 0x55.
+@pytest.mark.slow
+@pytest.mark.disruptive
+def test_ts022_the_shipped_line_setting_reads_the_meter(dut, sim):
+    """TS-022 — FR-MTR-01, FR-MTR-02. The device ships reading the right line.
 
-    0x55 alternates every bit, so it is the one pattern that cannot survive a
-    polarity error unnoticed: inverted, it arrives as a uniform 0xD5 rather than
-    as noise. Run before anything that interprets content, because every later
-    result depends on the bits being the right way up.
+    The simulator is driven at the polarity the meter's front-end delivers
+    (`invert on`, interface spec §2.2), so a fresh boot faces exactly what an
+    installation presents.
 
-    It cannot do that yet. The firmware probes UART candidates and rotates after
-    two bursts that show no HDLC framing — which a 0x55 pattern never shows. So
-    the probe walks candidates mid-test and the board reports whichever setting
-    it was on: one run collected 0x55, 0x00 and 0xD5 together. The test is right
-    and the seam is missing; it needs a way to pin the line setting, and that is
-    an obligation on the firmware rather than a reason to weaken the check.
+    The assertion is that the FIRST line setting works: the device decodes
+    without ever logging `nothing decodes — trying …`. That rotation is a
+    recovery path, and a device that reaches the meter only by walking off its
+    shipped configuration satisfies no requirement — FR-MTR-02 says the receive
+    signal is inverted, not that something eventually is.
+
+    It is also why polarity cannot be tested with mode 1. A 0x55 pattern carries
+    no HDLC framing by construction, so the probe rotates during the test and
+    the board reports whichever candidate it happened to be on. A real telegram
+    at the real polarity settles the question the pattern cannot.
     """
-    # A mode change takes effect on the NEXT telegram, so the cycle in flight is
-    # still e450. Draining before it has passed captures a mixture and the test
-    # reports a polarity fault that is not there.
-    sim.command("mode 1", settle=8)
     dut.drain()
-    heads = [m.group(1) for line in dut.lines(seconds=30)
-             if (m := re.search(r"first 32 bytes: (.*)", line))]
-    sim.command("mode 3", settle=1)
+    dut.reset()
+    lines = dut.lines(seconds=55)
 
-    assert heads, "no burst was reported in 30 s — the line is silent"
-    seen = {b for head in heads for b in head.split()[:16]}
-    print(f"\n  distinct byte values received: {sorted(seen)[:8]}")
-    assert seen == {"55"}, f"expected only 0x55; got {sorted(seen)[:12]}"
+    rotations = [l for l in lines if "nothing decodes" in l]
+    settings = [m.group(1) for line in lines
+                if (m := re.search(r"meter UART on GPIO\d+, \d+ (.+), listen-only", line))]
+    decoded = [int(m.group(1)) for line in lines
+               if (m := re.search(r"cycle: \d+ bytes, (\d+) objects", line))]
+
+    print(f"\n  line setting(s): {settings or ['(not logged this window)']}")
+    print(f"  rotations: {len(rotations)} | objects per cycle: {decoded}")
+
+    assert any(n > 0 for n in decoded), (
+        "no cycle decoded anything after a fresh boot at the meter's own "
+        "polarity — the device cannot read the line it ships configured for"
+    )
+    assert not rotations, (
+        f"the device only reached the meter after rotating its line settings "
+        f"({[l.split('trying')[-1].strip() for l in rotations]}). The shipped "
+        "configuration does not match the interface spec, so every installation "
+        "loses the opening bursts of every boot to a probe."
+    )
 
 
 # How many cycles to watch before deciding the link is unusable. The rig
@@ -85,11 +94,10 @@ def test_link_health(dut, sim):
     verification — it carries no test ID because it discharges no requirement.
 
     **What it asserts is that a cycle decodes, not that a percentage of bytes
-    arrives.** The first version compared the best cycle against 90% of what the
-    simulator reported sending, and the rig sits right on that line: 89%, 95% and
-    97% across three runs of the same unchanged setup. A fixed percentage floor
-    there is a coin toss, and the temptation when it fails is to lower the number
-    until it passes — which is tuning a threshold to hide a result.
+    arrives.** The rig sits right on the 90% line — repeated runs of the same
+    unchanged setup land at 89%, 95% and 97% — so a fixed percentage floor is a
+    coin toss, and the temptation when it fails is to lower the number until it
+    passes, which is tuning a threshold to hide a result.
 
     So it asserts the thing every test below it actually depends on: that at
     least one cycle in ten decodes something. A run of ten that all decode
@@ -127,18 +135,19 @@ def test_link_health(dut, sim):
 
 @pytest.mark.deviation
 @pytest.mark.fast
-def test_ts021_the_full_telegram_is_a_deviation(dut, sim):
-    """TS-021 — FR-MTR-06. The full E450 telegram, three GBT blocks, 417 bytes.
+def test_ts020_the_full_telegram_is_a_deviation(dut, sim):
+    """TS-020 — NFR-MTR-01, as far as this rig can carry it.
 
-    A deviation rather than the baseline. The rig delivers about 370 of those
-    bytes and the missing ones are always the opening flag and address of frame
-    1, so the identity does not survive — measured, and removed entirely by six
-    bytes of lead-in. That is the simulator, not the firmware.
+    What it can prove: the full E450 telegram, three GBT blocks, 417 bytes,
+    still yields decoded values. What it CANNOT prove is NFR-MTR-01 itself. The
+    requirement is that no byte is dropped, and this rig drops them: about 370
+    of 417 arrive and the missing ones are always the opening flag and address
+    of frame 1, so the identity does not survive. That is the simulator, not the
+    firmware — six bytes of lead-in removes the loss entirely.
 
     So the assertion is the acceptance rule for this rig: a few proper signals
-    decode. Values must come out of the long telegram across several cycles; the
-    identity is not required here, because the bread-and-butter phase already
-    proved the device reads one when it arrives.
+    decode. Byte-completeness against a meter that really sends every byte is
+    observed only in WF-006 and WF-007, at the installation.
     """
     sim.command("mode 3")
     dut.drain()
@@ -221,10 +230,9 @@ def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     # The oracle is the SIMULATOR's emission count, not the device's cycle count.
     # A corrupted telegram is discarded early enough that the device never logs a
     # cycle for it at all, so counting cycles compares two numbers that both drop
-    # and proves nothing — measured 2026-08-06: 3 cycles, 3 publishes, and the
-    # corrupted burst simply missing from both. Emissions are what the rig knows
-    # it sent, so publishes < emissions is the claim that the bad frame produced
-    # no values.
+    # and proves nothing: the corrupted burst is simply missing from both.
+    # Emissions are what the rig knows it sent, so publishes < emissions is the
+    # claim that the bad frame produced no values.
     assert emitted > 0, "the simulator emitted nothing in 30 s — a rig fault"
     assert len(published) < emitted, (
         f"all {emitted} emitted telegrams produced a publication, so the frame "
@@ -249,10 +257,33 @@ def test_ts042_ts044_quiet_and_noisy_lines(dut, sim, directive, expect):
     noise is abnormal and must be distinguishable from a decode failure, because
     the two want completely different fixes.
     """
+    # Drained BEFORE the directive, never after. `fault noise` applies to the
+    # very next telegram, so a drain issued afterwards discards the one burst
+    # the case exists to observe and the device is reported as silent about a
+    # condition it announced.
+    dut.drain()
     before = int(sim.status().get("emissions", 0))
     sim.command(directive)
-    dut.drain()
     lines = dut.lines(seconds=40)
+    if not directive.startswith("silence"):
+        # The noise fault corrupts a single telegram and then clears itself, so
+        # the device has exactly one opportunity to announce it and does so on
+        # one line. This console drops lines, and a line that was printed and
+        # lost is indistinguishable from one that was never printed at all. The
+        # absence of the report after a single burst is therefore not evidence
+        # that the device failed to make it.
+        #
+        # The stimulus is repeated instead, up to three times, and the test
+        # stops as soon as the report appears. This does not weaken what is
+        # being claimed: every attempt is a fresh corrupted telegram that the
+        # device is required to report, so the assertion still fails if the
+        # device is genuinely silent about noise.
+        for _ in range(3):
+            if [l for l in lines if "nothing decoded" in l or "flags" in l]:
+                break
+            dut.drain()
+            sim.command(directive)
+            lines += dut.lines(seconds=25)
     emitted = int(sim.status().get("emissions", 0)) - before
 
     published = [line for line in lines if "published" in line and "state" in line]
@@ -268,9 +299,9 @@ def test_ts042_ts044_quiet_and_noisy_lines(dut, sim, directive, expect):
 
     # `fault noise` corrupts ONE telegram and then clears itself, so the good
     # telegrams either side publish exactly as they should. Requiring silence
-    # across the whole window fails on correct behaviour — measured 2026-08-06,
-    # three legitimate publications reported as noise reaching the broker. What
-    # the requirement asks is that the noisy one yields nothing and is CALLED
+    # across the whole window fails on correct behaviour, reporting the
+    # legitimate publications either side as noise reaching the broker. What the
+    # requirement asks is that the noisy telegram yields nothing and is CALLED
     # something, distinct from a quiet line.
     assert emitted > 0, "the simulator emitted nothing — a rig fault"
     assert len(published) < emitted, (

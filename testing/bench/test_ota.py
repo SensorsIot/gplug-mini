@@ -56,8 +56,7 @@ def test_ts062_a_url_on_the_command_topic_starts_an_update(dut, broker, sim, dut
     Proven by the device RESTARTING into the new image, not by a log line saying
     it started downloading. That line is emitted once and this board's console
     loses it often enough that a test hung on it reports a working update as a
-    failure — measured 2026-08-06, where the uptime went from 200 s to 25 s
-    while the harness insisted nothing had happened.
+    failure while the uptime plainly shows the device restarted.
     """
     before = _uptime_ms(dut)
     assert before is not None, "the device is printing nothing at all to begin with"
