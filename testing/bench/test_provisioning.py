@@ -80,23 +80,36 @@ def derived_passphrase(ssid):
 
 
 def join_portal(wb, ssid, passphrase, tries=3):
-    """Associate with the DUT's SoftAP, distinguishing the two failure kinds.
+    """Associate with the DUT's SoftAP, distinguishing the three failure kinds.
 
     A rejected passphrase is a result about the device. "Connected but no IP" is
     a DHCP race that has already proved the passphrase was accepted — retrying
     that one keeps a lease timing out from being reported as a wrong password.
+
+    A transport error is neither. This runs in the gate phase, so a single HTTP
+    timeout reaching the bench skips every case behind it — thirty-six of them,
+    twice, for one call that would have worked a second later. A gate must
+    establish its precondition rather than assert it, which means retrying the
+    transport and failing only when the bench is genuinely not answering.
     """
     wb.ap_stop()
     last = None
-    for _ in range(tries):
-        last = wb.sta_join(ssid, passphrase, timeout=25)
+    for attempt in range(tries):
+        try:
+            last = wb.sta_join(ssid, passphrase, timeout=25)
+        except Exception as e:          # noqa: BLE001 — any transport failure is the same result
+            last = {"error": f"the bench did not answer: {e}"}
+            print(f"\n  sta_join did not answer ({e}); retrying "
+                  f"({attempt + 1}/{tries})")
+            time.sleep(5)
+            continue
         if last.get("ip"):
             return last
         if "Connected to" not in str(last.get("error", "")):
             break                      # a real refusal; do not paper over it
         wb.sta_leave()
         time.sleep(3)
-    pytest.fail(f"could not reach the portal: {last}")
+    pytest.fail(f"could not reach the portal after {tries} attempts: {last}")
 
 
 def get_page(wb, url, tries=4):
