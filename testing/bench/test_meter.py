@@ -242,73 +242,76 @@ def test_ts019_a_bad_checksum_frame_becomes_nothing(dut, sim):
     )
 
 
-@pytest.mark.parametrize("directive,expect", [
-    ("silence 60", "no measurement is published"),
-    ("fault noise 200", "a condition distinct from a decode failure is logged"),
-])
 @pytest.mark.exception
 @pytest.mark.slow
 @pytest.mark.disruptive
-def test_ts042_ts044_quiet_and_noisy_lines(dut, sim, directive, expect):
-    """TS-042 — FR-MTR-12, and TS-044 — FR-MTR-14.
+def test_ts042_a_silent_line_publishes_nothing(dut, sim):
+    """TS-042 — FR-MTR-12. A meter that says nothing must not invent a reading.
 
-    A silent meter and a noisy one are different conditions and must not present
-    as the same one. Silence is normal and must not disturb the network session;
-    noise is abnormal and must be distinguishable from a decode failure, because
-    the two want completely different fixes.
+    Silence is normal: the meter is quiet between transmissions and can be quiet
+    for far longer. What must not happen is a measurement appearing anyway, from
+    a cached set or a repeated one, because a value that outlives its moment is
+    indistinguishable from a live one in an energy dashboard.
+
+    Written as its own case rather than parametrised alongside TS-044, because a
+    node carrying two case ids records only the first: TS-044's result was
+    silently dropped for as long as they shared a function.
     """
-    # Drained BEFORE the directive, never after. `fault noise` applies to the
-    # very next telegram, so a drain issued afterwards discards the one burst
-    # the case exists to observe and the device is reported as silent about a
-    # condition it announced.
     dut.drain()
     before = int(sim.status().get("emissions", 0))
-    sim.command(directive)
+    sim.command("silence 60")
     lines = dut.lines(seconds=40)
-    if not directive.startswith("silence"):
-        # The noise fault corrupts a single telegram and then clears itself, so
-        # the device has exactly one opportunity to announce it and does so on
-        # one line. This console drops lines, and a line that was printed and
-        # lost is indistinguishable from one that was never printed at all. The
-        # absence of the report after a single burst is therefore not evidence
-        # that the device failed to make it.
-        #
-        # The stimulus is repeated instead, up to three times, and the test
-        # stops as soon as the report appears. This does not weaken what is
-        # being claimed: every attempt is a fresh corrupted telegram that the
-        # device is required to report, so the assertion still fails if the
-        # device is genuinely silent about noise.
-        for _ in range(3):
-            if [l for l in lines if "nothing decoded" in l or "flags" in l]:
-                break
-            dut.drain()
-            sim.command(directive)
-            lines += dut.lines(seconds=25)
     emitted = int(sim.status().get("emissions", 0)) - before
 
     published = [line for line in lines if "published" in line and "state" in line]
+    print(f"\n  {emitted} emission(s) during silence, {len(published)} publish(es)")
+    assert not published, (
+        f"a measurement was published with the meter sending nothing: {published}"
+    )
 
-    if directive.startswith("silence"):
-        # Silence stops emission outright, so nothing may be published at all.
-        assert not published, (
-            f"{directive!r} produced a published measurement with no meter "
-            f"sending anything: {published}"
-        )
-        print(f"\n  {emitted} emission(s) during silence, {len(published)} publish(es)")
-        return
 
-    # `fault noise` corrupts ONE telegram and then clears itself, so the good
-    # telegrams either side publish exactly as they should. Requiring silence
-    # across the whole window fails on correct behaviour, reporting the
-    # legitimate publications either side as noise reaching the broker. What the
-    # requirement asks is that the noisy telegram yields nothing and is CALLED
-    # something, distinct from a quiet line.
+@pytest.mark.exception
+@pytest.mark.slow
+@pytest.mark.disruptive
+def test_ts044_noise_is_reported_as_its_own_condition(dut, sim):
+    """TS-044 — FR-MTR-14. A noisy line and a quiet one are different faults.
+
+    They want completely different fixes — a quiet line is a meter that is not
+    talking, a noisy one is a link that is corrupting what it carries — so they
+    must not present as the same condition. The device must yield no values from
+    the noisy burst AND say something distinct about it.
+    """
+    dut.drain()
+    before = int(sim.status().get("emissions", 0))
+    sim.command("fault noise 200")
+    lines = dut.lines(seconds=40)
+
+    # The noise fault corrupts a single telegram and then clears itself, so the
+    # device has exactly one opportunity to announce it and does so on one line.
+    # This console drops lines, and a line that was printed and lost is
+    # indistinguishable from one never printed, so its absence after a single
+    # burst is not evidence that the device failed to report it.
+    #
+    # The stimulus is repeated instead, up to three times, stopping as soon as
+    # the report appears. Each attempt is a fresh corrupted telegram the device
+    # is required to report, so a device genuinely silent about noise still
+    # fails.
+    for _ in range(3):
+        if [l for l in lines if "nothing decoded" in l or "flags" in l]:
+            break
+        dut.drain()
+        sim.command("fault noise 200")
+        lines += dut.lines(seconds=25)
+
+    emitted = int(sim.status().get("emissions", 0)) - before
+    published = [line for line in lines if "published" in line and "state" in line]
+    distinct = [line for line in lines if "nothing decoded" in line or "flags" in line]
+
+    print(f"\n  {emitted} emission(s), {len(published)} publish(es), "
+          f"noise reported on {len(distinct)} line(s)")
     assert emitted > 0, "the simulator emitted nothing — a rig fault"
     assert len(published) < emitted, (
         f"all {emitted} emitted telegrams published, so the noisy one produced "
         "values too"
     )
-    distinct = [line for line in lines if "nothing decoded" in line or "flags" in line]
     assert distinct, "noise was not reported as anything — it must not look like silence"
-    print(f"\n  {emitted} emission(s), {len(published)} publish(es), "
-          f"noise reported on {len(distinct)} line(s)")

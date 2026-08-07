@@ -661,6 +661,12 @@ NVS_OFFSET = "0x9000"
 NVS_SIZE = 24 * 1024      # the nvs partition in partitions.csv
 
 
+def _looks_provisioned(dut, seconds=25):
+    """Whether the device is out of its portal and running normally."""
+    return any("state=operational" in l or "cycle:" in l
+               for l in dut.lines(seconds=seconds))
+
+
 @pytest.fixture
 def unprovisioned(wb, dut):
     """A device with no stored configuration, so it enters Provisioning.
@@ -685,8 +691,32 @@ def unprovisioned(wb, dut):
     result = wb.flash_region("SLOT1", "esp32c3", NVS_OFFSET, b"\xff" * NVS_SIZE)
     assert result.get("ok"), f"could not blank NVS, so the portal cannot be reached: {result}"
     yield
-    # Deliberately not restored. The device is left as the test left it, and the
-    # provisioning phase ends by configuring it for everything downstream.
+    # Restored, because the device is shared state and a test that hands the
+    # next one a blank board makes it describe that instead of the requirement
+    # it was written for.
+    #
+    # This used to rely on "the provisioning phase ends by configuring it for
+    # everything downstream", which holds only while every user of this fixture
+    # runs in that phase. test_config.py's cases are `exception` phase and run
+    # near the end, so the tests behind them met a device in its portal: one
+    # asserting no publication passes trivially because nothing is connected,
+    # and one asserting a restart can be satisfied by the portal's own 300 s
+    # timeout rather than by the update it was testing.
+    from test_provisioning import ensure_provisioned
+    try:
+        restored = ensure_provisioned(wb, dut)
+    except Exception as e:              # noqa: BLE001 — including pytest.fail
+        # Restoration is best effort by contract, and its helpers are written to
+        # fail a TEST when they cannot find what they expect. Raised from a
+        # teardown that reaches an already-provisioned device — which has no
+        # portal to find, correctly — that turns a passing case into an ERROR
+        # and reports a defect where there is none.
+        restored = _looks_provisioned(dut)
+        if not restored:
+            print(f"\n  could not restore the device: {e}")
+    if not restored:
+        print("\n  WARNING: the device was left unprovisioned; the next test "
+              "will describe that rather than its own requirement")
 
 
 class MqttWatch:
