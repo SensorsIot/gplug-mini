@@ -2,31 +2,14 @@
 
 ```yaml
 document_status:            draft
-fsd_version:                0.3.0
+fsd_version:                0.3.1
 repository:                 gplug-mini
 baseline_commit:            1b4db45
 applicable_firmware_version: 0.0.0-4f44d6b (bench)
 author:                     SensorsIot
 reviewers:                  —
 approval_status:            pending review
-created:                    2026-08-03
-last_updated:               2026-08-05
-change_history:
-  - 0.1.0 · 2026-08-03 · initial specification from decisions.md and
-    MBUS-E450-Interface-Spec.md
-  - 0.2.0 · 2026-08-05 · verification contracts merged into the requirement
-    tables; tier moved out of the FSD onto tests; requirements redistributed to
-    the components that own them; two build-restating requirements removed
-  - 0.3.0 · 2026-08-05 · every requirement carries a contract. FR-WDT-01
-    weakened: it claimed every task is watchdog-subscribed, which no stimulus can
-    observe, and now claims a subscribed task that stalls causes a reset within
-    the configured period. Narrower on purpose - the wider claim needs a firmware
-    seam listing subscribers, and an unverifiable requirement is worse than a
-    smaller verifiable one
-superseded_requirements:
-  - FR-MTR-09 · split; the identity half became FR-MTR-10
-  - FR-CFG-01..04, FR-ERR-01..04, NFR-NET-03 · moved to their owning components
-  - NFR-NET-01, NFR-NET-02, FR-DEC-01, FR-DEC-02 · removed, restated elsewhere
+last_updated:               2026-08-07
 open_decisions:
   - OD-6  WiFi coverage inside the meter cabinet (gates field acceptance)
 related_test_baseline:      testing/test-plan.yaml
@@ -77,8 +60,8 @@ keyboard, no screen, and no convenient physical access.
   pushed but not decoded — interface spec §6.1.
 - Controlling, configuring or writing to the meter. The device is a passive
   listener and never transmits on the meter link — interface spec §1.
-- Operating on an encrypted customer interface. A key slot exists; decryption is
-  not in this specification — §4.3 below.
+- Operating on an encrypted customer interface. Neither decryption nor a key
+  slot is in this specification — interface spec §4.3.
 
 ### 1.6 System flow
 
@@ -266,7 +249,7 @@ closed.
 | Real frames differ from published captures | Medium | Decoder rework late | Decoding is proven against published captures before hardware; a real capture becomes a fixture in Phase 3 |
 | Meter serial length differs from the assumption | Medium | Decoder finds no blocks and **fails silently** | Treated as a parameter, not a constant (FR-MTR-05); logged as a distinct condition (FR-MTR-14) |
 | DSO changes the pushed register set | Low | Entities vanish from Home Assistant | Publish only what is present (FR-HA-05); absence is not an error |
-| DSO enables encryption on the interface | Low | Total loss of readings | Key slot provisioned (FR-MTR-11); decryption itself is out of scope |
+| DSO enables encryption on the interface | Low | Total loss of readings | **Accepted.** Encryption is outside this specification entirely, so a DSO that enables it makes the device useless at that installation until decryption is specified and built |
 | Bad firmware reaches the device | Low | Physical visit required | Rollback on failure to reach the broker (FR-OTA-05); manual trigger only (FR-OTA-02) |
 | Discovery payloads are correct but Home Assistant still does not render the entities | Low | Found at the first installation, not on the bench | **Accepted.** Verification stops at the broker (§22.0), so nothing proves the integration's own behaviour. The payload keys carrying that behaviour are specified exactly (FR-HA-01..05, NFR-OTA-01) and asserted against the published message, which is the part that is ours to get wrong |
 
@@ -285,7 +268,7 @@ Recorded so a later reader sees a decision rather than an omission.
 | Excluded | Reason |
 |---|---|
 | **Remote log access over MQTT** | Considered and declined. Diagnostics are the LED states of §11 plus the local serial console. Accepted consequence: a fault the LEDs do not describe requires physical access |
-| DLMS decryption | No key, no encrypted meter to test against. Implementing a cipher before there is a key to test it with produces untestable code — interface spec §4.3 |
+| DLMS decryption, and the key slot that would feed it | No key, and no encrypted meter to test against. A cipher built before there is a key to test it with is untestable code, and a slot that stores a key nothing can use is a configuration field that does nothing — interface spec §4.3 |
 | Sub-meter channels (gas, water, heat) | Pushed by the meter, decoded by nobody here — interface spec §6.1 |
 | Offline buffering across broker outages | `total_increasing` lets Home Assistant reconstruct consumption from the next counter value; a gap costs resolution, not correctness (D-H4) |
 | Automatic update polling | Delivers a bad build everywhere before anyone notices (D-U2) |
@@ -449,9 +432,7 @@ level shifter. Traffic is one-way.
 | **FR-MTR-09** | Must | The device shall map decoded OBIS codes to the measurement labels of Appendix B. | Feed a published capture | Every register maps to the right label, unit and scale | A value mapped to the wrong label | `[derived]` D-H2 |
 | **FR-MTR-10** | Must | The device shall read the meter identity from the COSEM logical device name (`0.0.42.0.0.255`) or from device ID 1 (`0.0.96.1.0.255`), whichever the meter publishes. | Feed a capture carrying each object, then one carrying neither | Identity read from whichever is present; with neither, discovery defers | The wrong object preferred when both are present | `[code]` published captures |
 | **NFR-MTR-01** | Must | The receive path shall buffer at least 512 bytes of a single burst without loss. | Feed a 491-byte telegram, the longest measured in the reference captures | No byte dropped | Any byte dropped | `[proposed]` interface spec §2.2 |
-| **FR-MTR-11** | Must | The device shall store a DLMS key when supplied, and operate without one when it is absent. | Boot with a DLMS key stored, then with the slot empty | Both boot and decode an unencrypted telegram | An absent key blocks startup | `[user]` D-C1 |
 | **FR-MTR-12** | Must | The device shall continue operating in every state when the meter produces no data. | Simulator `silence 60` | WiFi and the broker session hold; no measurement is published | A reset, or a stale set republished to fill the gap | `[derived]` |
-| **FR-MTR-13** | Must | The device shall count discarded frames and make the count available on the serial console. | Simulator `fault fcs 2`; read the counter on the console | The count rises by exactly one per corrupted frame | The count is unavailable, or good frames are counted | `[derived]` |
 | **FR-MTR-14** | Must | The device shall log a distinct condition when a burst is received but no block is found. | Simulator `fault noise 200`, then silence | A condition distinct from a decode failure is logged | Silence, or the same message a CRC failure produces | `[code]` published captures |
 
 FR-MTR-04 is a safety property, not a convenience: the customer interface is a
@@ -469,7 +450,7 @@ framing, OBIS-addressed. Full detail in interface spec §4 and §5; not restated
 |---|---|
 | No bytes received | No publication. The device remains in its network state and reports nothing about the meter |
 | Continuous noise, no valid frame | Frames discarded; no publication (FR-AGG-06) |
-| CRC failures | Frame discarded (FR-MTR-07); counted for diagnostics (FR-MTR-13) |
+| CRC failures | Frame discarded (FR-MTR-07) |
 | Burst exceeds the buffer | Excess dropped, condition logged; the partial set is still decoded |
 | Decoder finds no blocks | Distinct logged condition — the signature of a wrong serial length (FR-MTR-14) |
 
@@ -556,7 +537,7 @@ available. The peer is a human with a web browser.
 ### 9.3 Configuration collected
 
 See §17 for the full catalogue. The portal collects WiFi SSID and passphrase,
-broker host and port, MQTT username and password, and an optional DLMS key.
+broker host and port, and MQTT username and password.
 
 ### 9.4 Failure modes
 
@@ -781,7 +762,6 @@ Which tests cover these requirements, and what each produced, is in
 | `mqtt_port` | uint16 | 1883 | No | Portal |
 | `mqtt_user` | string | empty | No | Portal |
 | `mqtt_pass` | string | empty | No | Portal |
-| `dlms_key` | hex string | empty | No | Portal |
 | `serial_len` | uint8 | 8 | No | Compile-time default, portal override |
 
 ---

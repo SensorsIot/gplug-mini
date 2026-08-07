@@ -117,7 +117,7 @@ Use chapter 9 to reconfigure it deliberately.
 ## 5. Configuration reference
 
 *Pending Phase 2.* The configurable set is FSD §17: WiFi credentials, broker host
-and port, MQTT credentials, and an optional DLMS key. Everything else has a
+and port, and MQTT credentials. Everything else has a
 correct default and is not exposed.
 
 ## 6. Reading the indicators

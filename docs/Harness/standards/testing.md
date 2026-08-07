@@ -1137,11 +1137,10 @@ ssh pi@<bench> '
 
 It must print `bench-ok`. Nothing learned from the board counts until it does.
 
-**An SSID is not an identity — check the BSSID.** On 2026-08-05 two benches both
-answered to `gplug-bench`; the board joined the other one, took a lease on its
-subnet, and that bench ran no broker at all. Three correct broker addresses were
-each blamed in turn before anyone read the line the board had been printing from
-the first capture:
+**An SSID is not an identity — check the BSSID.** Two benches answering to one
+SSID is enough for a board to join the wrong one, take a lease on its subnet and
+find no broker there. Every broker address then looks wrong in turn, while the
+board has been printing the answer all along:
 
 ```text
 wifi:connected with <ssid>, aid = 1, channel 11, bssid = d8:3a:dd:7c:b1:c2

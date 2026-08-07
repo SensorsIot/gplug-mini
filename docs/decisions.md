@@ -47,7 +47,7 @@ here.
 
 | # | Decision | Gates |
 | --- | --- | --- |
-| C1 | Configurable: WiFi SSID/password, broker host/port, MQTT username/password, and an empty DLMS key slot. Nothing else — the discovery prefix and device name have correct defaults. `[derived]` | Portal form, NVS schema |
+| C1 | Configurable: WiFi SSID/password, broker host/port, MQTT username/password. Nothing else — the discovery prefix and device name have correct defaults. `[derived]` | Portal form, NVS schema |
 | C2 | **Plain NVS**, no flash encryption. A deliberate, documented position: flash encryption needs irreversible eFuse burning, and anyone with physical access to the meter cabinet has better options than the WiFi password. `[user]` | Security section of the FSD |
 | C3 | AP mode **only** on first boot with no stored credentials, or on a deliberate ~5 s button hold with a few-minute timeout back to retrying. `[user]` | State machine |
 | C4 | **Never self-demote to AP on WiFi loss.** Retry forever, backoff capped ~30 s. A router reboot must not strand the device in a portal nobody can see. `[user]` | The single most consequential availability decision |
@@ -141,5 +141,6 @@ Recorded so they are not helpfully reintroduced.
 | Flash encryption / encrypted NVS | Irreversible eFuse burning and materially harder development flashing, to protect a WiFi password from someone already inside the meter cabinet |
 | An open provisioning AP | Rejected in favour of WPA2 — see C6 |
 | A merged factory image artifact | The workbench flashes from parts at offsets; nothing would consume it |
+| A discarded-frame counter on the serial console | The console is reachable only by opening the meter cabinet with a laptop, which is the one situation where the log can be read directly. Counting also needs our own HDLC FCS check, since `dlms_parser` reports no per-frame outcome — a second framing implementation that can disagree with the library's. FR-MTR-14 names the condition per occurrence instead |
 | Buffering readings across a broker outage | `total_increasing` makes gaps cost resolution rather than correctness — see H4 |
 | A self-hosted CI runner to gate on bench tests | More machinery than this project warrants. The tag carries that meaning instead — see B3 |
